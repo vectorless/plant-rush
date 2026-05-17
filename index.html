@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Plant Rush</title>
+  <style>
+    :root {
+      --c-common: #9aa0a6;
+      --c-uncommon: #6cc36c;
+      --c-rare: #4a9be8;
+      --c-legendary: #e8b048;
+      --c-mythic: #c886ff;
+      --bg: #142018;
+      --bg-2: #1d2a22;
+      --ink: #e6eee4;
+      --ink-dim: #8a9c8e;
+      --gold: #ffe78a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; background: var(--bg);
+      color: var(--ink); font-family: 'Georgia', serif; overflow: hidden; }
+    button { font-family: inherit; cursor: pointer; }
+    .hidden { display: none !important; }
+
+    #topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 28px; background: rgba(10,18,12,0.85);
+      border-bottom: 1px solid #2c3a30; backdrop-filter: blur(6px); }
+    #title { font-size: 22px; letter-spacing: 6px; color: #c8e0c0; }
+    #currencies { display: flex; gap: 22px; align-items: center; }
+    #coins { font-size: 22px; letter-spacing: 2px; color: var(--gold); }
+    #coins .lbl { font-size: 12px; opacity: 0.55; margin-right: 6px; letter-spacing: 3px; }
+    #gems { font-size: 22px; letter-spacing: 2px; color: #c0a8ff; }
+    #gems .lbl { font-size: 12px; opacity: 0.55; margin-right: 6px; letter-spacing: 3px; }
+    #dailyBtn { position: relative; }
+    #dailyBtn.ready { border-color: #c0a8ff; color: #c0a8ff; }
+    #dailyBtn.ready::after { content: ''; position: absolute; top: 4px; right: 4px;
+      width: 8px; height: 8px; border-radius: 50%; background: #ffcc4a;
+      box-shadow: 0 0 8px #ffcc4a; }
+    #navBtns button { background: transparent; border: 1px solid #4a5a4c;
+      color: var(--ink); padding: 8px 18px; letter-spacing: 3px; font-size: 13px;
+      margin-left: 8px; border-radius: 2px; }
+    #navBtns button:hover { background: #233028; border-color: #6c8870; }
+
+    #stage { position: fixed; inset: 60px 0 0 0; display: block; }
+    #scene { display: block; width: 100%; height: 100%; cursor: pointer;
+      background: linear-gradient(#9ed8ff 0%, #dff2ff 60%); }
+    body.photo-mode #scene { cursor: crosshair; }
+    #photoBanner { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+      background: rgba(20, 32, 24, 0.92); border: 1px solid #ffcc4a; color: #ffe78a;
+      padding: 8px 18px; border-radius: 4px; letter-spacing: 2px; font-size: 13px;
+      pointer-events: none; z-index: 8; }
+
+    /* Gallery grid */
+    .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 12px; margin-top: 8px; }
+    .photo-card { background: #131c16; border: 1px solid #2c3a30; border-radius: 6px;
+      padding: 6px; display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+      transition: border-color 0.12s; }
+    .photo-card:hover { border-color: #6c8870; }
+    .photo-card img { width: 100%; height: auto; border-radius: 4px; display: block;
+      background: #0c1410; cursor: zoom-in; }
+    .photo-card .pmeta { color: var(--ink-dim); font-size: 11px; letter-spacing: 1px;
+      text-align: center; }
+    .photo-card .pname { color: var(--ink); font-size: 13px; letter-spacing: 2px;
+      text-align: center; }
+    .photo-card .prow { display: flex; justify-content: center; gap: 6px; }
+    .photo-card button { background: transparent; color: var(--ink-dim);
+      border: 1px solid #4a5a4c; border-radius: 2px; padding: 4px 10px;
+      font-size: 11px; letter-spacing: 2px; }
+    .photo-card button:hover { color: #e88a8a; border-color: #b86c6c; }
+    .gallery-empty { color: var(--ink-dim); font-style: italic; padding: 18px 0; text-align: center; }
+
+    /* Photo lightbox */
+    #lightbox { position: fixed; inset: 0; z-index: 80;
+      background: rgba(0,0,0,0.92); display: flex; align-items: center; justify-content: center;
+      padding: 30px; cursor: zoom-out; }
+    #lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 6px;
+      box-shadow: 0 0 60px rgba(0,0,0,0.8); }
+
+    /* Modal */
+    #modalBackdrop { position: fixed; inset: 0; z-index: 50;
+      background: rgba(5, 10, 7, 0.78); display: flex;
+      align-items: center; justify-content: center; padding: 24px; }
+    .modal { background: linear-gradient(160deg, var(--bg-2), #0e160f);
+      border: 1px solid #34483a; border-radius: 10px;
+      padding: 26px 30px; min-width: 360px; max-width: 720px;
+      max-height: 80vh; overflow-y: auto;
+      box-shadow: 0 0 40px rgba(0,0,0,0.6); }
+    .modal h2 { margin: 0 0 6px; font-size: 18px; letter-spacing: 6px;
+      color: #c8e0c0; font-weight: normal; }
+    .modal .sub { color: var(--ink-dim); font-size: 13px; margin: 0 0 18px;
+      font-style: italic; }
+    .modal-close { float: right; background: transparent; border: none;
+      color: var(--ink-dim); font-size: 22px; cursor: pointer; line-height: 1;
+      margin: -6px -8px 0 0; }
+    .modal-close:hover { color: var(--ink); }
+
+    .row { display: flex; align-items: center; justify-content: space-between;
+      gap: 16px; padding: 12px 14px; margin-bottom: 8px;
+      background: #131c16; border: 1px solid #2c3a30; border-radius: 6px;
+      transition: border-color 0.12s, background 0.12s; }
+    .row:hover { border-color: #6c8870; background: #182218; }
+    .row .left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+    .row .swatch { width: 28px; height: 28px; border-radius: 50%;
+      border: 2px solid #2c3a30; flex-shrink: 0; }
+    .row .name { font-size: 15px; letter-spacing: 2px; color: var(--ink); }
+    .row .meta { color: var(--ink-dim); font-size: 12px; letter-spacing: 1px; margin-top: 2px; }
+    .row[data-rarity="common"] .swatch    { border-color: var(--c-common); }
+    .row[data-rarity="uncommon"] .swatch  { border-color: var(--c-uncommon); }
+    .row[data-rarity="rare"] .swatch      { border-color: var(--c-rare); }
+    .row[data-rarity="legendary"] .swatch { border-color: var(--c-legendary); }
+    .row[data-rarity="mythic"] .swatch    { border-color: var(--c-mythic);
+      box-shadow: 0 0 10px rgba(200, 134, 255, 0.55); }
+    .row[data-rarity="mythic"] { background: linear-gradient(160deg, #1a1024, #131c16); }
+    .row[data-rarity="mythic"] .name { color: #e8d8ff; }
+    .row button { background: #1c2620; color: var(--ink);
+      padding: 8px 18px; border: 1px solid #5a7060;
+      letter-spacing: 3px; font-size: 12px; border-radius: 2px; }
+    .row button:hover:not(:disabled) { background: #2e3e34; border-color: #8aa890; }
+    .row button:disabled { opacity: 0.35; cursor: not-allowed; }
+    .row .price { color: var(--gold); letter-spacing: 2px; font-size: 13px; margin-right: 8px; }
+    .row.locked .name { color: var(--ink-dim); }
+
+    .section-title { font-size: 13px; letter-spacing: 5px; color: var(--ink-dim);
+      margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #2c3a30; }
+    .section-title:first-of-type { margin-top: 0; }
+
+    /* Toast layer */
+    #toasts { position: fixed; top: 80px; right: 20px; z-index: 40;
+      display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+    .toast { background: rgba(20, 32, 24, 0.92); border: 1px solid #5a7060;
+      padding: 8px 16px; border-radius: 4px; color: var(--gold);
+      letter-spacing: 2px; font-size: 14px;
+      animation: toastIn 0.25s ease, toastOut 0.4s ease 1.2s forwards; }
+    @keyframes toastIn { from { opacity: 0; transform: translateX(20px); }
+      to { opacity: 1; transform: translateX(0); } }
+    @keyframes toastOut { to { opacity: 0; transform: translateY(-8px); } }
+  </style>
+</head>
+<body>
+  <div id="topbar">
+    <div id="title">PLANT RUSH</div>
+    <div id="currencies">
+      <div id="coins"><span class="lbl">COINS</span><span id="coinValue">0</span></div>
+      <div id="gems"><span class="lbl">GEMS</span>💎 <span id="gemValue">0</span></div>
+    </div>
+    <div id="navBtns">
+      <button id="dailyBtn">🎁 DAILY</button>
+      <button id="photoBtn">📷 PHOTO</button>
+      <button id="galleryBtn">🖼 GALLERY</button>
+      <button id="shopBtn">SHOP</button>
+    </div>
+  </div>
+  <div id="stage">
+    <canvas id="scene"></canvas>
+    <div id="photoBanner" class="hidden">📷 Tap a plant to photograph it · ESC to cancel</div>
+  </div>
+  <div id="toasts"></div>
+  <div id="modalBackdrop" class="hidden"></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
