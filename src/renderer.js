@@ -236,11 +236,12 @@ export function hitTestHanging(cssX, cssY) {
     const hp = state.hangingPots[i];
     const pos = hangingPotPos(hp);
     if (!pos) continue;
-    // The pot is ~34 wide × 24 tall at scale; the plant rises another ~50px above.
-    // Use a generous box, floored to a comfortable click size.
-    const halfW = Math.max(18, 22 * pos.scale);
-    const above = Math.max(60, 70 * pos.scale);
-    const below = Math.max(14, 18 * pos.scale);
+    // Visuals are 5× smaller than the underlying perspective scale; floors keep
+    // the hit area clickable even when the pot renders tiny.
+    const visualScale = pos.scale * HANGING_POT_VIS_SCALE;
+    const halfW = Math.max(12, 22 * visualScale + 6);
+    const above = Math.max(28, 70 * visualScale + 14);
+    const below = Math.max(8,  18 * visualScale + 4);
     if (cssX >= pos.x - halfW && cssX <= pos.x + halfW
         && cssY >= pos.y - above && cssY <= pos.y + below) {
       return hp.id;
@@ -281,8 +282,11 @@ function drawHangingPots(nowMs) {
   }
 }
 
+// Hanging planters render 5× smaller than the underlying decor perspective scale.
+const HANGING_POT_VIS_SCALE = 0.2;
+
 function drawHangingPotItem(hp, pos, nowMs) {
-  const s = Math.max(0.6, pos.scale);
+  const s = Math.max(0.6, pos.scale) * HANGING_POT_VIS_SCALE;
   ctx.save();
   // Rope from above the pot toward the decor anchor
   ctx.strokeStyle = '#3a2a1a';
