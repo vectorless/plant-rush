@@ -209,7 +209,7 @@ export function hitTestDecor(cssX, cssY) {
 // Anchor offset (in unscaled pixels) from the decor item's foot position
 // (cx, by) — i.e. where a hanging pot will hang.
 function hangingAnchor(type) {
-  if (type === 'tree')  return { x: 14, y: -52 };  // off a branch
+  if (type === 'tree')  return { x: 14, y: -34 };  // at the bottom of the canopy
   if (type === 'house') return { x: -22, y: -52 }; // under an eave
   if (type === 'bush')  return { x: 0,  y: -22 };
   if (type === 'fence') return { x: 0,  y: -30 };
