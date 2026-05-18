@@ -99,6 +99,41 @@ export function snapshotPlant(species, plot) {
 let photoModeOn = false;
 export function setPhotoModeVisual(on) { photoModeOn = !!on; }
 
+let editTool = null;
+let editSrcPlot = -1;
+let decorPreview = null; // {type, x, y} in CSS px, or null
+export function setEditModeVisual(tool, srcPlot = -1) {
+  editTool = tool || null;
+  editSrcPlot = (typeof srcPlot === 'number') ? srcPlot : -1;
+  if (!editTool) decorPreview = null;
+}
+export function setDecorPreview(type, x, y) {
+  if (!type || x == null || y == null) { decorPreview = null; return; }
+  decorPreview = { type, x, y };
+}
+
+// Real ground-plane perspective: a point at screen-y position projects so that
+// projected_size ∝ (y - horizon). Things at the horizon are infinitely far →
+// vanishingly small; things near the bottom are close → large. We clamp the
+// minimum so very-distant items remain just barely visible and clickable.
+const DECOR_HORIZON_FRAC = 0.40; // matches the hill tops
+const DECOR_SCALE_PER_FRAC = 9.0;
+const DECOR_MIN_SCALE = 0.50;
+const DECOR_MAX_SCALE = 5.0;        // safety cap so a tree never eats the screen
+const DECOR_DIRT_BOOST = 2.0;       // 2× bonus when touching the dirt
+export function decorScaleAtY(yFrac) {
+  let s = Math.max(DECOR_MIN_SCALE, (yFrac - DECOR_HORIZON_FRAC) * DECOR_SCALE_PER_FRAC);
+  if (yFrac >= SOIL_Y_FRAC) s *= DECOR_DIRT_BOOST;
+  return Math.min(DECOR_MAX_SCALE, s);
+}
+
+export function cssToFrac(x, y) {
+  if (cssW <= 0 || cssH <= 0) return { xFrac: 0.5, yFrac: 0.5 };
+  return { xFrac: x / cssW, yFrac: y / cssH };
+}
+
+export function getCanvasCSSSize() { return { w: cssW, h: cssH }; }
+
 function recomputeLayout() {
   plotRects = [];
   const n = state.plotCount;
@@ -143,6 +178,77 @@ export function hitTest(cssX, cssY) {
   return -1;
 }
 
+function decorBounds(item) {
+  const x = item.xFrac * cssW;
+  const y = item.yFrac * cssH;
+  const s = decorScaleAtY(item.yFrac);
+  let bx, by, bw, bh;
+  if      (item.type === 'tree')  { bw = 60 * s; bh = 80 * s; bx = x - bw / 2; by = y - bh; }
+  else if (item.type === 'bush')  { bw = 52 * s; bh = 26 * s; bx = x - bw / 2; by = y - bh; }
+  else if (item.type === 'house') { bw = 72 * s; bh = 70 * s; bx = x - bw / 2; by = y - bh; }
+  else if (item.type === 'fence') { bw = 56 * s; bh = 30 * s; bx = x - bw / 2; by = y - bh; }
+  else if (item.type === 'rock')  { bw = 48 * s; bh = 22 * s; bx = x - bw / 2; by = y - bh; }
+  else                            { bw = 24 * s; bh = 24 * s; bx = x - bw / 2; by = y - bh / 2; }
+  // Guarantee a clickable hit area even when the item renders very small.
+  const MIN = 18;
+  if (bw < MIN) { bx -= (MIN - bw) / 2; bw = MIN; }
+  if (bh < MIN) { by -= (MIN - bh) / 2; bh = MIN; }
+  return { x: bx, y: by, w: bw, h: bh };
+}
+
+export function hitTestDecor(cssX, cssY) {
+  // Topmost first (most recently added).
+  for (let i = state.decor.length - 1; i >= 0; i--) {
+    const d = state.decor[i];
+    const b = decorBounds(d);
+    if (cssX >= b.x && cssX <= b.x + b.w && cssY >= b.y && cssY <= b.y + b.h) return d.id;
+  }
+  return null;
+}
+
+// Anchor offset (in unscaled pixels) from the decor item's foot position
+// (cx, by) — i.e. where a hanging pot will hang.
+function hangingAnchor(type) {
+  if (type === 'tree')  return { x: 14, y: -52 };  // off a branch
+  if (type === 'house') return { x: -22, y: -52 }; // under an eave
+  if (type === 'bush')  return { x: 0,  y: -22 };
+  if (type === 'fence') return { x: 0,  y: -30 };
+  if (type === 'rock')  return { x: 0,  y: -18 };
+  return { x: 0, y: -20 };
+}
+
+function hangingPotPos(hp) {
+  const dec = state.decor.find(d => d.id === hp.decorId);
+  if (!dec) return null;
+  const dx = dec.xFrac * cssW;
+  const dy = dec.yFrac * cssH;
+  const scale = decorScaleAtY(dec.yFrac);
+  const a = hangingAnchor(dec.type);
+  return {
+    decX: dx, decY: dy, scale,
+    x: dx + a.x * scale,
+    y: dy + a.y * scale,
+  };
+}
+
+export function hitTestHanging(cssX, cssY) {
+  for (let i = state.hangingPots.length - 1; i >= 0; i--) {
+    const hp = state.hangingPots[i];
+    const pos = hangingPotPos(hp);
+    if (!pos) continue;
+    // The pot is ~34 wide × 24 tall at scale; the plant rises another ~50px above.
+    // Use a generous box, floored to a comfortable click size.
+    const halfW = Math.max(18, 22 * pos.scale);
+    const above = Math.max(60, 70 * pos.scale);
+    const below = Math.max(14, 18 * pos.scale);
+    if (cssX >= pos.x - halfW && cssX <= pos.x + halfW
+        && cssY >= pos.y - above && cssY <= pos.y + below) {
+      return hp.id;
+    }
+  }
+  return null;
+}
+
 export function render(nowMs) {
   // Sky
   const sky = ctx.createLinearGradient(0, 0, 0, cssH * 0.7);
@@ -153,13 +259,310 @@ export function render(nowMs) {
 
   drawHills();
   drawSoil();
+  drawDecor();
   drawPlotBases();
+  drawPots();
   drawPlants(nowMs);
   drawEffects(nowMs);
   drawAffordances(nowMs);
   drawProgressBars(nowMs);
   drawThirstAlerts(nowMs);
+  drawHangingPots(nowMs);
   drawPlantNames(nowMs);
+  drawEditOverlay(nowMs);
+  drawDecorPreview();
+}
+
+function drawHangingPots(nowMs) {
+  for (const hp of state.hangingPots) {
+    const pos = hangingPotPos(hp);
+    if (!pos) continue;
+    drawHangingPotItem(hp, pos, nowMs);
+  }
+}
+
+function drawHangingPotItem(hp, pos, nowMs) {
+  const s = Math.max(0.6, pos.scale);
+  ctx.save();
+  // Rope from above the pot toward the decor anchor
+  ctx.strokeStyle = '#3a2a1a';
+  ctx.lineWidth = 1.5 * s;
+  ctx.beginPath();
+  ctx.moveTo(pos.x - 8 * s, pos.y - 60 * s);
+  ctx.lineTo(pos.x - 4 * s, pos.y - 12 * s);
+  ctx.moveTo(pos.x + 8 * s, pos.y - 60 * s);
+  ctx.lineTo(pos.x + 4 * s, pos.y - 12 * s);
+  ctx.stroke();
+
+  // Pot (smaller terracotta)
+  const topW = 32 * s, botW = 22 * s, h = 20 * s;
+  const py = pos.y; // top of pot rim
+  ctx.fillStyle = '#b85a28';
+  ctx.beginPath();
+  ctx.moveTo(pos.x - topW / 2, py);
+  ctx.lineTo(pos.x + topW / 2, py);
+  ctx.lineTo(pos.x + botW / 2, py + h);
+  ctx.lineTo(pos.x - botW / 2, py + h);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#8a3818';
+  ctx.fillRect(pos.x - topW / 2 - 2 * s, py - 4 * s, topW + 4 * s, 5 * s);
+
+  // Plant (drawn into a temporary transform). Scale plant down to ~0.55× of normal.
+  if (hp.plot && hp.plot.species) {
+    const sp = speciesById(hp.plot.species);
+    if (sp) {
+      const plantScale = 0.55 * s;
+      ctx.save();
+      ctx.translate(pos.x, py);
+      ctx.scale(plantScale, plantScale);
+      drawPlant(sp, hp.plot, { soilX: 0, soilY: 0, idx: 9000 + state.hangingPots.indexOf(hp) }, nowMs, 9000 + state.hangingPots.indexOf(hp));
+      ctx.restore();
+    }
+  }
+
+  // Affordance / progress
+  const st = plotState(hp.plot);
+  let glyph = '+';
+  let color = 'rgba(255,255,255,0.85)';
+  if (st === 'growing') { glyph = '💧'; color = 'rgba(255,255,255,0.65)'; }
+  else if (st === 'mature') { glyph = '★'; color = '#ffe78a'; }
+  const bob = st === 'mature' ? Math.sin(nowMs / 400 + (state.hangingPots.indexOf(hp))) * 2 : 0;
+  ctx.font = `${Math.round(14 * Math.max(0.8, s))}px Georgia, serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.beginPath();
+  ctx.arc(pos.x, py + h + 12 * s + bob, 11 * Math.max(0.8, s), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.fillText(glyph, pos.x, py + h + 12 * s + bob + 1);
+
+  // Mini progress bar while growing
+  if (hp.plot && hp.plot.species && hp.plot.growthProgress < 1) {
+    const W = 40 * s, H = 4 * s;
+    const x = pos.x - W / 2;
+    const y = py + h + 26 * s;
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(x, y, W, H);
+    const watered = nowMs < hp.plot.wateredUntil;
+    ctx.fillStyle = watered ? '#a8e0ff' : '#a8e08a';
+    ctx.fillRect(x, y, W * hp.plot.growthProgress, H);
+  }
+  ctx.restore();
+}
+
+function drawDecor() {
+  const items = [...state.decor].sort((a, b) => a.yFrac - b.yFrac);
+  for (const item of items) {
+    const x = item.xFrac * cssW;
+    const y = item.yFrac * cssH;
+    drawDecorItem(item.type, x, y, decorScaleAtY(item.yFrac), 1);
+  }
+}
+
+function drawDecorPreview() {
+  if (!decorPreview) return;
+  const yFrac = decorPreview.y / Math.max(1, cssH);
+  drawDecorItem(decorPreview.type, decorPreview.x, decorPreview.y, decorScaleAtY(yFrac), 0.5);
+  // Ground spot to anchor the preview.
+  ctx.save();
+  ctx.strokeStyle = 'rgba(168, 168, 255, 0.9)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  ctx.ellipse(decorPreview.x, decorPreview.y, 8, 3, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawDecorItem(type, x, y, scale, alpha) {
+  ctx.save();
+  if (alpha < 1) ctx.globalAlpha = alpha;
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  if (type === 'tree')  drawTree(0, 0);
+  else if (type === 'bush')  drawBush(0, 0);
+  else if (type === 'house') drawHouse(0, 0);
+  else if (type === 'fence') drawFence(0, 0);
+  else if (type === 'rock')  drawRock(0, 0);
+  ctx.restore();
+}
+
+function drawTree(cx, by) {
+  ctx.save();
+  // shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath();
+  ctx.ellipse(cx, by, 22, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // trunk
+  ctx.fillStyle = '#6a4424';
+  ctx.fillRect(cx - 5, by - 36, 10, 36);
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(cx - 5, by - 36, 10, 36);
+  // canopy
+  ctx.fillStyle = '#3a7a3a';
+  ctx.beginPath(); ctx.arc(cx, by - 52, 22, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#4a8a4a';
+  ctx.beginPath(); ctx.arc(cx - 14, by - 46, 16, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + 14, by - 46, 16, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#5ca84a';
+  ctx.beginPath(); ctx.arc(cx - 4, by - 60, 10, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawBush(cx, by) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(cx, by, 22, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#3a7a3a';
+  ctx.beginPath(); ctx.ellipse(cx, by - 10, 22, 12, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#4a8a4a';
+  ctx.beginPath(); ctx.ellipse(cx - 10, by - 14, 12, 10, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx + 10, by - 14, 12, 10, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#5cb05c';
+  ctx.beginPath(); ctx.ellipse(cx, by - 18, 10, 8, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawHouse(cx, by) {
+  ctx.save();
+  const w = 60, h = 42;
+  // shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath();
+  ctx.ellipse(cx, by, w * 0.55, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // wall
+  ctx.fillStyle = '#d8b48c';
+  ctx.fillRect(cx - w / 2, by - h, w, h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(cx - w / 2, by - h, w, h);
+  // roof
+  ctx.fillStyle = '#8a3818';
+  ctx.beginPath();
+  ctx.moveTo(cx - w / 2 - 4, by - h);
+  ctx.lineTo(cx, by - h - 22);
+  ctx.lineTo(cx + w / 2 + 4, by - h);
+  ctx.closePath();
+  ctx.fill();
+  // door
+  ctx.fillStyle = '#5a3a1a';
+  ctx.fillRect(cx - 7, by - 22, 14, 22);
+  ctx.fillStyle = '#ffd84a';
+  ctx.fillRect(cx + 4, by - 13, 2, 2);
+  // window
+  ctx.fillStyle = '#a8d8e8';
+  ctx.fillRect(cx + 12, by - h + 8, 14, 14);
+  ctx.strokeStyle = '#5a3a1a';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(cx + 12, by - h + 8, 14, 14);
+  ctx.beginPath();
+  ctx.moveTo(cx + 19, by - h + 8); ctx.lineTo(cx + 19, by - h + 22);
+  ctx.moveTo(cx + 12, by - h + 15); ctx.lineTo(cx + 26, by - h + 15);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawFence(cx, by) {
+  ctx.save();
+  const w = 56;
+  ctx.fillStyle = '#b08648';
+  // rails
+  ctx.fillRect(cx - w / 2, by - 20, w, 3);
+  ctx.fillRect(cx - w / 2, by - 8, w, 3);
+  // pickets
+  const segs = 5;
+  for (let i = 0; i < segs; i++) {
+    const px = cx - w / 2 + 4 + i * ((w - 8) / (segs - 1));
+    ctx.beginPath();
+    ctx.moveTo(px - 3, by);
+    ctx.lineTo(px - 3, by - 22);
+    ctx.lineTo(px, by - 28);
+    ctx.lineTo(px + 3, by - 22);
+    ctx.lineTo(px + 3, by);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+  ctx.lineWidth = 0.8;
+  for (let i = 0; i < segs; i++) {
+    const px = cx - w / 2 + 4 + i * ((w - 8) / (segs - 1));
+    ctx.beginPath();
+    ctx.moveTo(px, by);
+    ctx.lineTo(px, by - 28);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawRock(cx, by) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.ellipse(cx, by, 22, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#807c78';
+  ctx.beginPath();
+  ctx.ellipse(cx, by - 8, 22, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#a8a4a0';
+  ctx.beginPath();
+  ctx.ellipse(cx - 6, by - 12, 9, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx + 2, by - 4);
+  ctx.lineTo(cx + 12, by - 9);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPots() {
+  for (const idx of state.potPlots) {
+    const r = plotRects[idx];
+    if (!r) continue;
+    drawPot(r.soilX, r.soilY);
+  }
+}
+
+function drawPot(cx, sy) {
+  // Pot is 5× smaller than before — sits compactly on the soil line.
+  const topW = 10, botW = 7, h = 6;
+  ctx.save();
+  ctx.fillStyle = '#b85a28';
+  ctx.beginPath();
+  ctx.moveTo(cx - topW / 2, sy);
+  ctx.lineTo(cx + topW / 2, sy);
+  ctx.lineTo(cx + botW / 2, sy + h);
+  ctx.lineTo(cx - botW / 2, sy + h);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#8a3818';
+  ctx.fillRect(cx - topW / 2 - 1, sy - 1, topW + 2, 2);
+  ctx.restore();
+}
+
+function drawEditOverlay() {
+  if (!editTool) return;
+  // Dashed ring over selected source plot (move tool only).
+  if (editTool === 'move' && editSrcPlot >= 0 && editSrcPlot < plotRects.length) {
+    const r = plotRects[editSrcPlot];
+    ctx.save();
+    ctx.strokeStyle = '#ffcc4a';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.ellipse(r.soilX, r.soilY + 2, 42, 12, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 function drawPlantNames(nowMs) {
@@ -235,6 +638,9 @@ function drawThirstAlerts(nowMs) {
   ctx.restore();
 }
 
+// The tiny pot (≤7px tall) no longer obstructs HUD overlays, so no offset.
+function overlayOffset(_idx) { return 0; }
+
 function drawProgressBars(nowMs) {
   const W = 70, H = 6;
   ctx.save();
@@ -243,7 +649,7 @@ function drawProgressBars(nowMs) {
     if (!plot || !plot.species || plot.growthProgress >= 1) continue;
     const r = plotRects[i];
     const x = r.soilX - W / 2;
-    const y = r.soilY + 48;
+    const y = r.soilY + 48 + overlayOffset(i);
     const watered = nowMs < plot.wateredUntil;
 
     // Track
@@ -383,11 +789,14 @@ function drawSoil() {
 
 function drawPlotBases() {
   for (const r of plotRects) {
-    // Darker dug patch on the soil line.
-    ctx.fillStyle = 'rgba(0,0,0,0.28)';
-    ctx.beginPath();
-    ctx.ellipse(r.soilX, r.soilY + 2, 28, 7, 0, 0, Math.PI * 2);
-    ctx.fill();
+    const hasPot = state.potPlots.includes(r.idx);
+    if (!hasPot) {
+      // Darker dug patch on the soil line.
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.beginPath();
+      ctx.ellipse(r.soilX, r.soilY + 2, 28, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     // Photo-mode highlight ring above plots with plants.
     if (photoModeOn) {
@@ -686,10 +1095,10 @@ function drawAffordances(nowMs) {
     }
     // Place above the soil line, with bob for mature.
     const bob = st === 'mature' ? Math.sin(nowMs / 400 + i) * 2 : 0;
-    let y = r.soilY + 28 + bob;
+    let y = r.soilY + 28 + overlayOffset(i) + bob;
     if (st !== 'empty') {
       // Show under the plot instead of above growing plant (avoids overlap with bloom).
-      y = r.soilY + 28 + bob;
+      y = r.soilY + 28 + overlayOffset(i) + bob;
     }
     // Background pill
     ctx.fillStyle = 'rgba(0,0,0,0.35)';

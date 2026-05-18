@@ -5,6 +5,7 @@ import { initRenderer, render } from './renderer.js';
 import { initInput } from './input.js';
 import { initUI, refreshCoins, openDaily, refreshDailyBtn } from './ui.js';
 import { dailyEligible } from './state.js';
+import { initTutorial, tutorialTick } from './tutorial.js';
 
 loadState();
 loadGallery();
@@ -17,6 +18,7 @@ initUI();
 initInput();
 refreshCoins();
 refreshDailyBtn();
+initTutorial();
 
 // Auto-prompt the daily reward on load if eligible (matches plant_cars UX).
 if (dailyEligible()) {
@@ -34,6 +36,7 @@ setInterval(() => {
     refreshCoins();
     lastCoinDisplay = state.coins;
   }
+  tutorialTick();
 }, TICK_MS);
 
 // Render loop: pure draw, no state mutation.

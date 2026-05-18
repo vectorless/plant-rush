@@ -47,10 +47,36 @@
     #scene { display: block; width: 100%; height: 100%; cursor: pointer;
       background: linear-gradient(#9ed8ff 0%, #dff2ff 60%); }
     body.photo-mode #scene { cursor: crosshair; }
+    body.edit-mode #scene { cursor: crosshair; }
     #photoBanner { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
       background: rgba(20, 32, 24, 0.92); border: 1px solid #ffcc4a; color: #ffe78a;
       padding: 8px 18px; border-radius: 4px; letter-spacing: 2px; font-size: 13px;
       pointer-events: none; z-index: 8; }
+    #editBanner { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+      background: rgba(20, 32, 24, 0.92); border: 1px solid #a8a8ff; color: #d4d4ff;
+      padding: 8px 18px; border-radius: 4px; letter-spacing: 2px; font-size: 13px;
+      pointer-events: none; z-index: 8; }
+    #hangBanner { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+      background: rgba(20, 32, 24, 0.95); border: 1px solid #b88838; color: #ffdca8;
+      padding: 8px 18px; border-radius: 4px; letter-spacing: 2px; font-size: 13px;
+      pointer-events: none; z-index: 8; }
+    #editToolbar { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center;
+      background: rgba(14, 22, 16, 0.96); border: 1px solid #5a6878; border-radius: 8px;
+      padding: 10px 14px; box-shadow: 0 4px 30px rgba(0,0,0,0.55); z-index: 9; max-width: 92vw; }
+    #editToolbar button.tool { background: transparent; color: var(--ink);
+      border: 1px solid #4a5a4c; padding: 6px 12px; letter-spacing: 2px;
+      font-size: 12px; border-radius: 3px; }
+    #editToolbar button.tool:hover:not(:disabled) { background: #233028; border-color: #6c8870; }
+    #editToolbar button.tool:disabled { opacity: 0.35; cursor: not-allowed; }
+    #editToolbar button.tool.active { background: #2e3e34; border-color: #a8a8ff; color: #d4d4ff;
+      box-shadow: 0 0 8px rgba(168,168,255,0.4); }
+    #editToolbar button.tool.danger.active { border-color: #e88a8a; color: #ffc0c0;
+      box-shadow: 0 0 8px rgba(232,138,138,0.4); }
+    #editToolbar .tool-sep { width: 1px; height: 22px; background: #3a4a3e; margin: 0 4px; }
+    #editDoneBtn { background: #2e3e34; color: var(--ink); border: 1px solid #8aa890;
+      padding: 6px 16px; letter-spacing: 3px; font-size: 12px; border-radius: 3px; }
+    #editDoneBtn:hover { background: #3e5046; border-color: #b0c8b6; }
 
     /* Gallery grid */
     .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -127,6 +153,32 @@
       margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #2c3a30; }
     .section-title:first-of-type { margin-top: 0; }
 
+    /* Tutorial overlay */
+    #tutorial { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+      z-index: 40; pointer-events: none; max-width: 92vw; }
+    .tut-box { pointer-events: auto;
+      background: rgba(14, 22, 16, 0.96); border: 1px solid #8aa890;
+      border-radius: 8px; padding: 14px 20px 16px; width: 480px; max-width: 100%;
+      box-shadow: 0 4px 30px rgba(0,0,0,0.65); animation: tutIn 0.25s ease; }
+    .tut-head { display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 6px; }
+    .tut-step { color: var(--ink-dim); font-size: 11px; letter-spacing: 4px; }
+    .tut-title { color: #c8e0c0; font-size: 16px; letter-spacing: 3px; margin-bottom: 8px; }
+    .tut-body { color: var(--ink); font-size: 13px; line-height: 1.55; margin-bottom: 12px; }
+    .tut-actions { display: flex; align-items: center; justify-content: flex-end;
+      gap: 12px; min-height: 32px; }
+    .tut-hint { color: #ffe78a; font-size: 12px; letter-spacing: 2px; font-style: italic;
+      margin-right: auto; animation: tutPulse 1.4s ease-in-out infinite; }
+    .tut-next { background: #2e3e34; color: var(--ink); padding: 8px 22px;
+      border: 1px solid #8aa890; letter-spacing: 3px; font-size: 12px; border-radius: 2px; }
+    .tut-next:hover { background: #3e5046; border-color: #b0c8b6; }
+    .tut-skip { background: transparent; color: var(--ink-dim); padding: 4px 10px;
+      border: 1px solid #3a4a3e; letter-spacing: 2px; font-size: 10px; border-radius: 2px; }
+    .tut-skip:hover { color: var(--ink); border-color: #6c8870; }
+    @keyframes tutIn { from { opacity: 0; transform: translate(-50%, 12px); }
+      to { opacity: 1; transform: translate(-50%, 0); } }
+    @keyframes tutPulse { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+
     /* Toast layer */
     #toasts { position: fixed; top: 80px; right: 20px; z-index: 40;
       display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
@@ -150,12 +202,27 @@
       <button id="dailyBtn">🎁 DAILY</button>
       <button id="photoBtn">📷 PHOTO</button>
       <button id="galleryBtn">🖼 GALLERY</button>
+      <button id="editBtn">🛠 EDIT</button>
       <button id="shopBtn">SHOP</button>
     </div>
   </div>
   <div id="stage">
     <canvas id="scene"></canvas>
     <div id="photoBanner" class="hidden">📷 Tap a plant to photograph it · ESC to cancel</div>
+    <div id="editBanner" class="hidden">🛠 EDIT MODE — closer to the bottom = bigger · ESC to exit</div>
+    <div id="hangBanner" class="hidden">🪴 Click a tree, bush, house, fence, or rock to hang your pot · ESC to cancel (refund)</div>
+    <div id="editToolbar" class="hidden">
+      <button class="tool" data-tool="move" title="Swap two plots (click source, then destination)">↔ MOVE</button>
+      <button class="tool" data-tool="pot" title="Toggle pot on a plot (requires skin)">🪴 POT</button>
+      <button class="tool" data-tool="tree">🌳 TREE</button>
+      <button class="tool" data-tool="bush">🌿 BUSH</button>
+      <button class="tool" data-tool="house">🏠 HOUSE</button>
+      <button class="tool" data-tool="fence">▦ FENCE</button>
+      <button class="tool" data-tool="rock">⬢ ROCK</button>
+      <button class="tool danger" data-tool="delete" title="Click a decor item to remove it">🗑 DELETE</button>
+      <span class="tool-sep"></span>
+      <button id="editDoneBtn">DONE</button>
+    </div>
   </div>
   <div id="toasts"></div>
   <div id="modalBackdrop" class="hidden"></div>

@@ -1,4 +1,4 @@
-import { state, STARTING_COINS, STARTING_GEMS, STARTING_PLOTS, MAX_PLOTS, UPGRADES } from './state.js';
+import { state, STARTING_COINS, STARTING_GEMS, STARTING_PLOTS, MAX_PLOTS, UPGRADES, SKINS, DECOR_TYPES } from './state.js';
 import { SPECIES, speciesById, DEFAULT_UNLOCKED } from './plants.js';
 
 const KEY = 'plant_rush:v1';
@@ -16,6 +16,10 @@ export function loadState() {
     state.plots = mergePlots(data.plots, state.plotCount);
     state.unlockedSpecies = mergeUnlocked(data.unlockedSpecies);
     state.upgrades = mergeUpgrades(data.upgrades);
+    state.unlockedSkins = mergeSkins(data.unlockedSkins);
+    state.potPlots = mergePotPlots(data.potPlots, state.plotCount);
+    state.decor = mergeDecor(data.decor);
+    state.hangingPots = mergeHangingPots(data.hangingPots, state.decor);
   } catch (e) {
     resetDefaults();
   }
@@ -77,6 +81,69 @@ function resetDefaults() {
   state.plots = Array.from({ length: STARTING_PLOTS }, () => null);
   state.unlockedSpecies = [...DEFAULT_UNLOCKED];
   state.upgrades = { water: 0, growth: 0, harvest: 0 };
+  state.unlockedSkins = [];
+  state.potPlots = [];
+  state.decor = [];
+  state.hangingPots = [];
+}
+
+function mergeHangingPots(a, decor) {
+  if (!Array.isArray(a)) return [];
+  const ids = new Set(decor.map(d => d.id));
+  const out = [];
+  const seenDecor = new Set();
+  for (const h of a) {
+    if (!h || typeof h !== 'object') continue;
+    if (typeof h.id !== 'string' || typeof h.decorId !== 'string') continue;
+    if (!ids.has(h.decorId) || seenDecor.has(h.decorId)) continue;
+    seenDecor.add(h.decorId);
+    let plot = null;
+    if (h.plot && typeof h.plot === 'object'
+        && typeof h.plot.species === 'string'
+        && speciesById(h.plot.species)
+        && Number.isFinite(h.plot.growthProgress)) {
+      plot = {
+        species: h.plot.species,
+        growthProgress: Math.max(0, Math.min(1, h.plot.growthProgress)),
+        wateredUntil: Number.isFinite(h.plot.wateredUntil) ? h.plot.wateredUntil : 0,
+        plantedAt: Number.isFinite(h.plot.plantedAt) ? h.plot.plantedAt : Date.now(),
+      };
+    }
+    out.push({ id: h.id, decorId: h.decorId, plot });
+  }
+  return out;
+}
+
+function mergeSkins(a) {
+  if (!Array.isArray(a)) return [];
+  return a.filter(s => typeof s === 'string' && SKINS[s]);
+}
+
+function mergePotPlots(a, n) {
+  if (!Array.isArray(a)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const v of a) {
+    if (Number.isInteger(v) && v >= 0 && v < n && !seen.has(v)) {
+      seen.add(v);
+      out.push(v);
+    }
+  }
+  return out;
+}
+
+function mergeDecor(a) {
+  if (!Array.isArray(a)) return [];
+  const allowed = new Set(DECOR_TYPES);
+  return a.filter(d => d && typeof d === 'object'
+      && typeof d.type === 'string' && allowed.has(d.type)
+      && Number.isFinite(d.xFrac) && Number.isFinite(d.yFrac))
+    .map(d => ({
+      id: typeof d.id === 'string' ? d.id : `d_${Math.random().toString(36).slice(2, 9)}`,
+      type: d.type,
+      xFrac: Math.max(0, Math.min(1, d.xFrac)),
+      yFrac: Math.max(0, Math.min(1, d.yFrac)),
+    }));
 }
 
 export function saveState() {
@@ -89,6 +156,10 @@ export function saveState() {
     plots: state.plots,
     unlockedSpecies: state.unlockedSpecies,
     upgrades: state.upgrades,
+    unlockedSkins: state.unlockedSkins,
+    potPlots: state.potPlots,
+    decor: state.decor,
+    hangingPots: state.hangingPots,
   };
   localStorage.setItem(KEY, JSON.stringify(data));
 }
