@@ -11,6 +11,7 @@ import {
   cancelSprinklerPlacement, getPendingSprinklerType,
   RECIPES, brewPotion, startPotionTargeting, cancelPotionTargeting, isPotionPending,
   getGardens, getActiveGardenId, switchGarden,
+  isGardenUnlocked, gardenCost, buyGarden,
 } from './state.js';
 import { SPECIES, speciesById, MYTHIC_IDS, RARITY_COLORS } from './plants.js';
 import { relayout, setPhotoModeVisual, setEditModeVisual, setDecorPreview } from './renderer.js';
@@ -937,36 +938,62 @@ export function openGardenPicker() {
 function buildGardenRow(g) {
   const planted = g.plots.filter(p => p && p.species).length;
   const active = g.id === getActiveGardenId();
+  const unlocked = isGardenUnlocked(g.id);
+  const cost = gardenCost(g.id);
   const row = document.createElement('div');
   row.className = 'row';
+  const swatchBg = unlocked ? '#3a6a3a' : '#3a3a4a';
+  const swatchBorder = unlocked ? '#6cb05c' : '#6a6a7a';
+  const meta = unlocked
+    ? `${g.plotCount} plots · ${planted} planted · ${g.decor.length} decor · ${g.sprinklers.length} sprinkler`
+    : 'Locked — buy to unlock this screen.';
   row.innerHTML = `
     <div class="left">
-      <div class="swatch" style="background:#3a6a3a; display:flex; align-items:center; justify-content:center; font-size:14px;">🌍</div>
+      <div class="swatch" style="background:${swatchBg}; border-color:${swatchBorder}; display:flex; align-items:center; justify-content:center; font-size:14px;">${unlocked ? '🌍' : '🔒'}</div>
       <div>
         <div class="name">${g.name}${active ? ' · here now' : ''}</div>
-        <div class="meta">${g.plotCount} plots · ${planted} planted · ${g.decor.length} decor · ${g.sprinklers.length} sprinkler</div>
+        <div class="meta">${meta}</div>
       </div>
     </div>
   `;
   const right = document.createElement('div');
   right.style.display = 'flex';
   right.style.alignItems = 'center';
-  const btn = document.createElement('button');
-  btn.textContent = active ? 'CURRENT' : 'VISIT';
-  btn.disabled = active;
-  btn.addEventListener('click', () => {
-    if (switchGarden(g.id)) {
-      relayout();
-      refreshGardenBtn();
-      refreshCoins();
-      refreshHangBanner();
-      refreshShieldBanner();
-      refreshSprinklerBanner();
-      showToast(`Welcome to ${g.name}`);
-      closeModal();
-    }
-  });
-  right.appendChild(btn);
+
+  if (!unlocked) {
+    const price = document.createElement('span');
+    price.className = 'price';
+    price.textContent = `${cost}c`;
+    right.appendChild(price);
+    const btn = document.createElement('button');
+    btn.textContent = 'BUY';
+    btn.disabled = state.coins < cost;
+    btn.addEventListener('click', () => {
+      if (buyGarden(g.id)) {
+        refreshCoins();
+        showToast(`Unlocked ${g.name}`);
+        openGardenPicker();
+      }
+    });
+    right.appendChild(btn);
+  } else {
+    const btn = document.createElement('button');
+    btn.textContent = active ? 'CURRENT' : 'VISIT';
+    btn.disabled = active;
+    btn.addEventListener('click', () => {
+      if (switchGarden(g.id)) {
+        relayout();
+        refreshGardenBtn();
+        refreshCoins();
+        refreshHangBanner();
+        refreshShieldBanner();
+        refreshSprinklerBanner();
+        showToast(`Welcome to ${g.name}`);
+        closeModal();
+      }
+    });
+    right.appendChild(btn);
+  }
   row.appendChild(right);
   return row;
 }

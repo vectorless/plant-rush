@@ -19,13 +19,37 @@ export function loadState() {
     state.potions = mergePotions(data.potions);
     // Gardens: new saves use data.gardens, old saves keep flat fields.
     state.gardens = mergeGardens(data);
+    state.unlockedGardens = mergeUnlockedGardens(data, state.gardens);
     state.activeGardenId = typeof data.activeGardenId === 'string'
-      && state.gardens.some(g => g.id === data.activeGardenId)
+      && state.unlockedGardens.includes(data.activeGardenId)
         ? data.activeGardenId
-        : state.gardens[0].id;
+        : 'home';
   } catch (e) {
     resetDefaults();
   }
+}
+
+function mergeUnlockedGardens(data, gardens) {
+  const gardenIds = new Set(gardens.map(g => g.id));
+  // Explicit list wins.
+  if (Array.isArray(data.unlockedGardens)) {
+    const out = new Set(['home']);
+    for (const id of data.unlockedGardens) {
+      if (typeof id === 'string' && gardenIds.has(id)) out.add(id);
+    }
+    return [...out];
+  }
+  // Older save: grandfather in any garden that already has player content,
+  // otherwise lock everything except home.
+  const out = new Set(['home']);
+  for (const g of gardens) {
+    if (g.id === 'home') continue;
+    const hasContent = (g.plots && g.plots.some(p => p && p.species))
+      || (g.decor && g.decor.length > 0)
+      || (g.sprinklers && g.sprinklers.length > 0);
+    if (hasContent) out.add(g.id);
+  }
+  return [...out];
 }
 
 function mergeGardens(data) {
@@ -196,6 +220,7 @@ function resetDefaults() {
   state.potions = [];
   state.gardens = DEFAULT_GARDENS.map(g => makeGarden(g.id, g.name));
   state.activeGardenId = state.gardens[0].id;
+  state.unlockedGardens = ['home'];
 }
 
 function mergeHangingPots(a, decor) {
@@ -269,6 +294,7 @@ export function saveState() {
     inventory: state.inventory,
     potions: state.potions,
     activeGardenId: state.activeGardenId,
+    unlockedGardens: state.unlockedGardens,
     gardens: state.gardens.map(g => ({
       id: g.id, name: g.name,
       plotCount: g.plotCount,

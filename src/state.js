@@ -117,9 +117,9 @@ export const UPGRADES = {
 // etc. Coins, gems, inventory, potions, and upgrades are shared across all
 // gardens. Bugs are global to the active garden only (cleared on switch).
 export const DEFAULT_GARDENS = [
-  { id: 'home',     name: 'Home Garden' },
-  { id: 'meadow',   name: 'Meadow' },
-  { id: 'cliffside', name: 'Cliffside' },
+  { id: 'home',      name: 'Home Garden', cost: 0,    desc: 'Your starter patch.' },
+  { id: 'meadow',    name: 'Meadow',      cost: 600,  desc: 'Open green field with room to grow.' },
+  { id: 'cliffside', name: 'Cliffside',   cost: 2500, desc: 'Windswept ledge for your best crops.' },
 ];
 
 export const PER_GARDEN_FIELDS = [
@@ -155,6 +155,7 @@ export const state = {
   potions: [],          // [{id, recipeId}] — shared across gardens
   gardens: DEFAULT_GARDENS.map(g => makeGarden(g.id, g.name)),
   activeGardenId: 'home',
+  unlockedGardens: ['home'],
 };
 
 export function activeGarden() {
@@ -175,6 +176,7 @@ for (const field of PER_GARDEN_FIELDS) {
 export function switchGarden(id) {
   const g = state.gardens.find(g => g.id === id);
   if (!g) return false;
+  if (!isGardenUnlocked(id)) return false;
   if (state.activeGardenId === id) return false;
   state.activeGardenId = id;
   // Bugs target plot indices in the just-left garden; wipe them.
@@ -185,6 +187,19 @@ export function switchGarden(id) {
 
 export function getGardens() { return state.gardens; }
 export function getActiveGardenId() { return state.activeGardenId; }
+export function isGardenUnlocked(id) { return state.unlockedGardens.includes(id); }
+export function gardenCost(id) {
+  const def = DEFAULT_GARDENS.find(d => d.id === id);
+  return def ? def.cost : 0;
+}
+export function buyGarden(id) {
+  if (isGardenUnlocked(id)) return false;
+  const cost = gardenCost(id);
+  if (state.coins < cost) return false;
+  state.coins -= cost;
+  state.unlockedGardens.push(id);
+  return true;
+}
 
 export function todayKey(d = new Date()) {
   const y = d.getFullYear();
