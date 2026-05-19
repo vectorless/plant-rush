@@ -25,7 +25,8 @@ export const SHIELD_COST            = 50;     // coins per plot
 // Bugs are spawn-then-eat; players tap to flick them off before they ruin growth.
 export const BUG_SPAWN_BASE_MS      = 22_000; // average gap between spawns at 1 plot
 export const BUG_SPAWN_VAR_MS       = 12_000; // random extra delay
-export const BUG_EAT_PER_SEC        = 0.06;   // growth lost per second of munching
+export const BUG_EAT_PER_SEC        = 0.02;   // growth lost per second of munching
+export const BUG_WARNING_MS         = 3_000;  // heads-up window before a bug appears
 // Bugs only target plots that already have a growing or mature plant.
 
 // Upgrade tracks. Index 0 = base (owned by default).
@@ -80,7 +81,7 @@ export const state = {
   hangingPots: [],      // [{id, decorId, plot: null | plotShape}]
   shieldedPlots: [],    // plot indices protected from bugs
   bugs: [],             // [{id, plotIdx, sideSign, angle, jitter}] — transient, not persisted
-  nextBugAt: 0,         // ms timestamp for next spawn
+  bugWarning: null,     // null | {plotIdx, spawnAt} — heads-up before bug appears
 };
 
 export function todayKey(d = new Date()) {
@@ -456,30 +457,32 @@ export function isPlotShielded(plotIdx) {
 
 // ─── BUGS ──────────────────────────────────────────────────────────────────
 
-function scheduleNextBug(now) {
+function randomBugDelay() {
   const plots = state.plotCount || 1;
   // More plots → bugs come a little faster.
-  const base = BUG_SPAWN_BASE_MS / Math.sqrt(plots);
-  state.nextBugAt = now + base + Math.random() * BUG_SPAWN_VAR_MS;
+  return BUG_SPAWN_BASE_MS / Math.sqrt(plots) + Math.random() * BUG_SPAWN_VAR_MS;
 }
 
-function eligibleBugPlots() {
+function isPlotEligibleForBug(i) {
+  if (i < 0 || i >= state.plotCount) return false;
+  if (isPlotShielded(i)) return false;
+  if (state.bugs.some(b => b.plotIdx === i)) return false; // one bug per plot
+  const p = state.plots[i];
+  if (!p || !p.species) return false;
+  if (p.growthProgress <= 0) return false;
+  return true;
+}
+
+function pickBugTarget() {
   const out = [];
   for (let i = 0; i < state.plotCount; i++) {
-    if (isPlotShielded(i)) continue;
-    if (state.bugs.some(b => b.plotIdx === i)) continue; // one bug per plot
-    const p = state.plots[i];
-    if (!p || !p.species) continue;
-    if (p.growthProgress <= 0) continue;
-    out.push(i);
+    if (isPlotEligibleForBug(i)) out.push(i);
   }
-  return out;
+  if (out.length === 0) return null;
+  return out[Math.floor(Math.random() * out.length)];
 }
 
-function spawnBug(now) {
-  const choices = eligibleBugPlots();
-  if (choices.length === 0) return;
-  const plotIdx = choices[Math.floor(Math.random() * choices.length)];
+function spawnBugOnPlot(plotIdx, now) {
   state.bugs.push({
     id: `bug_${now.toString(36)}_${Math.floor(Math.random() * 1e4).toString(36)}`,
     plotIdx,
@@ -491,11 +494,21 @@ function spawnBug(now) {
 }
 
 export function tickBugs(now = Date.now(), dt = TICK_MS) {
-  if (state.nextBugAt === 0) scheduleNextBug(now);
-  if (now >= state.nextBugAt) {
-    spawnBug(now);
-    scheduleNextBug(now);
+  // Schedule a target + arrival time as soon as a slot is free, so the warning
+  // indicator has time to show 3 s before the bug actually appears.
+  if (!state.bugWarning) {
+    const target = pickBugTarget();
+    if (target !== null) {
+      state.bugWarning = { plotIdx: target, spawnAt: now + randomBugDelay() };
+    }
+  } else if (!isPlotEligibleForBug(state.bugWarning.plotIdx)) {
+    // Target became invalid (shielded, harvested, etc.) — drop the warning.
+    state.bugWarning = null;
+  } else if (now >= state.bugWarning.spawnAt) {
+    spawnBugOnPlot(state.bugWarning.plotIdx, now);
+    state.bugWarning = null;
   }
+
   // Each bug chews growth. Mature plants get knocked back below 1 so they can't be harvested.
   const lossPerTick = BUG_EAT_PER_SEC * (dt / 1000);
   for (const bug of state.bugs) {

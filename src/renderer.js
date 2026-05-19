@@ -1,4 +1,4 @@
-import { state, plotState, isPlotShielded } from './state.js';
+import { state, plotState, isPlotShielded, BUG_WARNING_MS } from './state.js';
 import { speciesById } from './plants.js';
 
 const SOIL_Y_FRAC = 0.62;  // soil line as fraction of canvas CSS height
@@ -274,6 +274,7 @@ export function render(nowMs) {
   drawProgressBars(nowMs);
   drawThirstAlerts(nowMs);
   drawShields(nowMs);
+  drawBugWarning(nowMs);
   drawBugs(nowMs);
   drawHangingPots(nowMs);
   drawPlantNames(nowMs);
@@ -310,6 +311,44 @@ export function hitTestBug(cssX, cssY) {
     if (dx * dx + dy * dy <= 18 * 18) return b.id;
   }
   return null;
+}
+
+function drawBugWarning(nowMs) {
+  const w = state.bugWarning;
+  if (!w) return;
+  const remaining = w.spawnAt - Date.now();
+  if (remaining > BUG_WARNING_MS) return; // not in the warning window yet
+  const r = plotRects[w.plotIdx];
+  if (!r) return;
+  // Position above the plant.
+  const plot = state.plots[w.plotIdx];
+  const sp = plot && plot.species ? speciesById(plot.species) : null;
+  const stemH = sp ? sp.stem.heightPx * easeOutQuad(plot.growthProgress) : 0;
+  const baseY = r.soilY - Math.max(60, stemH + 28);
+  // Pulse intensity ramps up as spawn nears.
+  const t = Math.max(0, Math.min(1, 1 - remaining / BUG_WARNING_MS));
+  const pulse = 0.6 + 0.4 * Math.sin(nowMs / 90);
+  const cy = baseY + Math.sin(nowMs / 180) * 3;
+  const cx = r.soilX;
+  ctx.save();
+  // Pill background, color shifts orange→red as t→1
+  const red   = Math.round(180 + t * 60);
+  const green = Math.round(120 - t * 80);
+  ctx.fillStyle = `rgba(${red}, ${green}, 40, ${0.55 + 0.35 * pulse})`;
+  ctx.strokeStyle = `rgba(255, 230, 160, ${0.7 + 0.3 * pulse})`;
+  ctx.lineWidth = 1;
+  const pad = 8, h = 22;
+  ctx.font = 'bold 13px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const label = '⚠ BUG';
+  const w0 = Math.ceil(ctx.measureText(label).width) + pad * 2;
+  roundRect(cx - w0 / 2, cy - h / 2, w0, h, h / 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#fff4d8';
+  ctx.fillText(label, cx, cy + 1);
+  ctx.restore();
 }
 
 function drawBugs(nowMs) {
