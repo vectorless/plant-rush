@@ -20,6 +20,14 @@ export const SKINS = {
 };
 export const DECOR_TYPES = ['tree', 'bush', 'house', 'fence', 'rock'];
 
+// ─── BUGS & SHIELDS ────────────────────────────────────────────────────────
+export const SHIELD_COST            = 50;     // coins per plot
+// Bugs are spawn-then-eat; players tap to flick them off before they ruin growth.
+export const BUG_SPAWN_BASE_MS      = 22_000; // average gap between spawns at 1 plot
+export const BUG_SPAWN_VAR_MS       = 12_000; // random extra delay
+export const BUG_EAT_PER_SEC        = 0.06;   // growth lost per second of munching
+// Bugs only target plots that already have a growing or mature plant.
+
 // Upgrade tracks. Index 0 = base (owned by default).
 export const UPGRADES = {
   water: {
@@ -70,6 +78,9 @@ export const state = {
   potPlots: [],         // plot indices that show a pot
   unlockedSkins: [],    // ['pot']
   hangingPots: [],      // [{id, decorId, plot: null | plotShape}]
+  shieldedPlots: [],    // plot indices protected from bugs
+  bugs: [],             // [{id, plotIdx, sideSign, angle, jitter}] — transient, not persisted
+  nextBugAt: 0,         // ms timestamp for next spawn
 };
 
 export function todayKey(d = new Date()) {
@@ -405,4 +416,103 @@ export function applyOfflineCatchup(now = Date.now()) {
   for (const plot of state.plots) catchupPlot(plot, start, now, speed);
   for (const hp of state.hangingPots) catchupPlot(hp.plot, start, now, speed);
   state.lastTick = now;
+}
+
+// ─── SHIELDS ───────────────────────────────────────────────────────────────
+
+let pendingShield = false; // bought but not yet attached to a plot
+
+export function isShieldPending() { return pendingShield; }
+
+export function buyShieldPending() {
+  if (pendingShield) return false;
+  if (state.coins < SHIELD_COST) return false;
+  state.coins -= SHIELD_COST;
+  pendingShield = true;
+  return true;
+}
+
+export function cancelShieldPlacement() {
+  if (!pendingShield) return false;
+  pendingShield = false;
+  state.coins += SHIELD_COST;
+  return true;
+}
+
+export function attachShield(plotIdx) {
+  if (!pendingShield) return false;
+  if (plotIdx < 0 || plotIdx >= state.plotCount) return false;
+  if (state.shieldedPlots.includes(plotIdx)) return false;
+  state.shieldedPlots.push(plotIdx);
+  // Bugs already on this plot are knocked off when the shield goes up.
+  state.bugs = state.bugs.filter(b => b.plotIdx !== plotIdx);
+  pendingShield = false;
+  return true;
+}
+
+export function isPlotShielded(plotIdx) {
+  return state.shieldedPlots.includes(plotIdx);
+}
+
+// ─── BUGS ──────────────────────────────────────────────────────────────────
+
+function scheduleNextBug(now) {
+  const plots = state.plotCount || 1;
+  // More plots → bugs come a little faster.
+  const base = BUG_SPAWN_BASE_MS / Math.sqrt(plots);
+  state.nextBugAt = now + base + Math.random() * BUG_SPAWN_VAR_MS;
+}
+
+function eligibleBugPlots() {
+  const out = [];
+  for (let i = 0; i < state.plotCount; i++) {
+    if (isPlotShielded(i)) continue;
+    if (state.bugs.some(b => b.plotIdx === i)) continue; // one bug per plot
+    const p = state.plots[i];
+    if (!p || !p.species) continue;
+    if (p.growthProgress <= 0) continue;
+    out.push(i);
+  }
+  return out;
+}
+
+function spawnBug(now) {
+  const choices = eligibleBugPlots();
+  if (choices.length === 0) return;
+  const plotIdx = choices[Math.floor(Math.random() * choices.length)];
+  state.bugs.push({
+    id: `bug_${now.toString(36)}_${Math.floor(Math.random() * 1e4).toString(36)}`,
+    plotIdx,
+    sideSign: Math.random() < 0.5 ? -1 : 1, // which side of the stem it sits on
+    stemFrac: 0.3 + Math.random() * 0.4,    // height along the stem (0..1)
+    angle: Math.random() * Math.PI * 2,     // for leg wiggle phase
+    spawnedAt: now,
+  });
+}
+
+export function tickBugs(now = Date.now(), dt = TICK_MS) {
+  if (state.nextBugAt === 0) scheduleNextBug(now);
+  if (now >= state.nextBugAt) {
+    spawnBug(now);
+    scheduleNextBug(now);
+  }
+  // Each bug chews growth. Mature plants get knocked back below 1 so they can't be harvested.
+  const lossPerTick = BUG_EAT_PER_SEC * (dt / 1000);
+  for (const bug of state.bugs) {
+    const plot = state.plots[bug.plotIdx];
+    if (!plot || !plot.species) continue;
+    plot.growthProgress = Math.max(0, plot.growthProgress - lossPerTick);
+  }
+  // Bugs whose plot was emptied (harvested, etc.) disappear.
+  state.bugs = state.bugs.filter(b => {
+    const p = state.plots[b.plotIdx];
+    return p && p.species;
+  });
+}
+
+export function killBug(bugId) {
+  const i = state.bugs.findIndex(b => b.id === bugId);
+  if (i < 0) return false;
+  state.bugs.splice(i, 1);
+  return true;
 }

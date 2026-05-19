@@ -20,9 +20,23 @@ export function loadState() {
     state.potPlots = mergePotPlots(data.potPlots, state.plotCount);
     state.decor = mergeDecor(data.decor);
     state.hangingPots = mergeHangingPots(data.hangingPots, state.decor);
+    state.shieldedPlots = mergeShielded(data.shieldedPlots, state.plotCount);
   } catch (e) {
     resetDefaults();
   }
+}
+
+function mergeShielded(a, n) {
+  if (!Array.isArray(a)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const v of a) {
+    if (Number.isInteger(v) && v >= 0 && v < n && !seen.has(v)) {
+      seen.add(v);
+      out.push(v);
+    }
+  }
+  return out;
 }
 
 function mergeUnlocked(u) {
@@ -85,6 +99,7 @@ function resetDefaults() {
   state.potPlots = [];
   state.decor = [];
   state.hangingPots = [];
+  state.shieldedPlots = [];
 }
 
 function mergeHangingPots(a, decor) {
@@ -160,6 +175,7 @@ export function saveState() {
     potPlots: state.potPlots,
     decor: state.decor,
     hangingPots: state.hangingPots,
+    shieldedPlots: state.shieldedPlots,
   };
   localStorage.setItem(KEY, JSON.stringify(data));
 }

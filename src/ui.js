@@ -6,6 +6,7 @@ import {
   hangingPotCost, buyHangingPot, isHangingPotPending, cancelHangingPotPlacement,
   plantInHanging, tradeGemForCoins, GEM_TO_COINS,
   redeemCode,
+  SHIELD_COST, buyShieldPending, isShieldPending, cancelShieldPlacement,
 } from './state.js';
 import { SPECIES, speciesById, MYTHIC_IDS } from './plants.js';
 import { relayout, setPhotoModeVisual, setEditModeVisual, setDecorPreview } from './renderer.js';
@@ -21,6 +22,7 @@ const editBtn      = document.getElementById('editBtn');
 const photoBanner  = document.getElementById('photoBanner');
 const editBanner   = document.getElementById('editBanner');
 const hangBanner   = document.getElementById('hangBanner');
+const shieldBanner = document.getElementById('shieldBanner');
 const editToolbar  = document.getElementById('editToolbar');
 const editDoneBtn  = document.getElementById('editDoneBtn');
 const backdrop     = document.getElementById('modalBackdrop');
@@ -84,6 +86,22 @@ export function onHangingAttached() {
   refreshHangBanner();
 }
 
+// ─── SHIELD PLACEMENT ──────────────────────────────────────────────────────
+export function refreshShieldBanner() {
+  if (shieldBanner) shieldBanner.classList.toggle('hidden', !isShieldPending());
+}
+export function cancelShieldPlace() {
+  if (cancelShieldPlacement()) {
+    showToast('Shield refunded');
+    refreshCoins();
+    refreshShieldBanner();
+  }
+}
+export function onShieldAttached() {
+  showToast('Shield up');
+  refreshShieldBanner();
+}
+
 function refreshEditToolbar() {
   const buttons = editToolbar.querySelectorAll('button.tool');
   for (const b of buttons) {
@@ -129,6 +147,7 @@ export function initUI() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       if (isHangingPotPending()) cancelHangingPlacement();
+      if (isShieldPending()) cancelShieldPlace();
       if (photoMode) setPhotoMode(false);
       if (editMode) setEditMode(false);
       closeModal();
@@ -372,6 +391,7 @@ export function openShop() {
     modal.appendChild(t2);
     modal.appendChild(buildPlotRow());
     modal.appendChild(buildHangingPotRow());
+    modal.appendChild(buildShieldRow());
 
     const tEx = document.createElement('div');
     tEx.className = 'section-title';
@@ -647,6 +667,41 @@ function openLightbox(dataUrl) {
 function closeLightbox() {
   const box = document.getElementById('lightbox');
   if (box) box.remove();
+}
+
+function buildShieldRow() {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const shielded = state.shieldedPlots.length;
+  row.innerHTML = `
+    <div class="left">
+      <div class="swatch" style="background:#1a2c4a; border-color:#8ac4ff; color:#a8d8ff; display:flex; align-items:center; justify-content:center; font-size:14px;">🛡</div>
+      <div>
+        <div class="name">+1 Plant Shield</div>
+        <div class="meta">Bugs can't touch the plant on the plot you choose. · ${shielded} active</div>
+      </div>
+    </div>
+  `;
+  const right = document.createElement('div');
+  right.style.display = 'flex';
+  right.style.alignItems = 'center';
+  const price = document.createElement('span');
+  price.className = 'price';
+  price.textContent = `${SHIELD_COST}c`;
+  const btn = document.createElement('button');
+  btn.textContent = 'BUY';
+  btn.disabled = state.coins < SHIELD_COST;
+  btn.addEventListener('click', () => {
+    if (buyShieldPending()) {
+      refreshCoins();
+      refreshShieldBanner();
+      closeModal();
+    }
+  });
+  right.appendChild(price);
+  right.appendChild(btn);
+  row.appendChild(right);
+  return row;
 }
 
 function buildHangingPotRow() {

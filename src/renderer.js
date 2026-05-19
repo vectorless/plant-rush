@@ -1,4 +1,4 @@
-import { state, plotState } from './state.js';
+import { state, plotState, isPlotShielded } from './state.js';
 import { speciesById } from './plants.js';
 
 const SOIL_Y_FRAC = 0.62;  // soil line as fraction of canvas CSS height
@@ -171,8 +171,10 @@ export function hitTest(cssX, cssY) {
   for (const r of plotRects) {
     if (cssX >= r.x && cssX <= r.x + r.w) {
       // generous vertical range: from a bit above the soil line down to the bottom,
-      // plus the whole plant column above for growing/mature plants.
-      if (cssY >= 0 && cssY <= r.soilY + 60) return r.idx;
+      // plus the whole plant column above for growing/mature plants. Potted plots
+      // extend further down so the rim/pot body is still clickable.
+      const extra = state.potPlots.includes(r.idx) ? GROUND_POT.h : 0;
+      if (cssY >= 0 && cssY <= r.soilY + 60 + extra) return r.idx;
     }
   }
   return -1;
@@ -271,10 +273,128 @@ export function render(nowMs) {
   drawAffordances(nowMs);
   drawProgressBars(nowMs);
   drawThirstAlerts(nowMs);
+  drawShields(nowMs);
+  drawBugs(nowMs);
   drawHangingPots(nowMs);
   drawPlantNames(nowMs);
   drawEditOverlay(nowMs);
   drawDecorPreview();
+}
+
+// ─── BUGS & SHIELDS ────────────────────────────────────────────────────────
+
+// Where the bug sits in screen px, based on its host plant's current stem.
+function bugPos(bug) {
+  const r = plotRects[bug.plotIdx];
+  if (!r) return null;
+  const plot = state.plots[bug.plotIdx];
+  if (!plot || !plot.species) return null;
+  const sp = speciesById(plot.species);
+  if (!sp) return null;
+  const eg = easeOutQuad(plot.growthProgress);
+  const stemH = sp.stem.heightPx * eg;
+  // Bug clings beside the stem at stemFrac height; offset out by 10px so it's tappable.
+  const y = r.soilY - stemH * bug.stemFrac;
+  const x = r.soilX + bug.sideSign * (sp.stem.thicknessPx * 0.5 + 10);
+  return { x, y };
+}
+
+export function hitTestBug(cssX, cssY) {
+  for (let i = state.bugs.length - 1; i >= 0; i--) {
+    const b = state.bugs[i];
+    const pos = bugPos(b);
+    if (!pos) continue;
+    const dx = cssX - pos.x;
+    const dy = cssY - pos.y;
+    // Comfortable click target — 18px radius covers the ~12px bug body plus legs.
+    if (dx * dx + dy * dy <= 18 * 18) return b.id;
+  }
+  return null;
+}
+
+function drawBugs(nowMs) {
+  for (const b of state.bugs) {
+    const pos = bugPos(b);
+    if (!pos) continue;
+    drawBugSprite(pos.x, pos.y, b.sideSign, b.angle + nowMs / 200);
+  }
+}
+
+function drawBugSprite(x, y, sideSign, phase) {
+  ctx.save();
+  ctx.translate(x, y);
+  // Body
+  ctx.fillStyle = '#3a1c12';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 7, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Ladybug back
+  ctx.fillStyle = '#c8341c';
+  ctx.beginPath();
+  ctx.ellipse(0, -1, 6, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Spots
+  ctx.fillStyle = '#2a1408';
+  for (const [sx, sy] of [[-3, -2], [3, -1], [-1, 1], [2, 2]]) {
+    ctx.beginPath();
+    ctx.arc(sx, sy, 0.9, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Head
+  ctx.fillStyle = '#1a0e08';
+  ctx.beginPath();
+  ctx.ellipse(sideSign * 5, 0, 2.5, 2.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Legs (wiggle)
+  ctx.strokeStyle = '#1a0e08';
+  ctx.lineWidth = 1;
+  const wig = Math.sin(phase) * 1.4;
+  for (let i = 0; i < 3; i++) {
+    const lx = -4 + i * 4;
+    ctx.beginPath();
+    ctx.moveTo(lx, 2);
+    ctx.lineTo(lx - 2, 6 + wig * ((i % 2) ? -1 : 1));
+    ctx.moveTo(lx, -2);
+    ctx.lineTo(lx - 2, -6 - wig * ((i % 2) ? -1 : 1));
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawShields(nowMs) {
+  ctx.save();
+  for (const idx of state.shieldedPlots) {
+    const r = plotRects[idx];
+    if (!r) continue;
+    // Hovering shield badge above the plot.
+    const bob = Math.sin(nowMs / 700 + idx) * 2;
+    const cx = r.soilX + 38;
+    const cy = r.soilY - 30 + bob;
+    // Badge background
+    ctx.fillStyle = 'rgba(20, 40, 70, 0.78)';
+    ctx.strokeStyle = '#8ac4ff';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 9);
+    ctx.lineTo(cx + 7, cy - 6);
+    ctx.lineTo(cx + 7, cy + 2);
+    ctx.quadraticCurveTo(cx + 7, cy + 8, cx, cy + 10);
+    ctx.quadraticCurveTo(cx - 7, cy + 8, cx - 7, cy + 2);
+    ctx.lineTo(cx - 7, cy - 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Cross
+    ctx.strokeStyle = '#a8d8ff';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 5);
+    ctx.lineTo(cx, cy + 5);
+    ctx.moveTo(cx - 3, cy);
+    ctx.lineTo(cx + 3, cy);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawHangingPots(nowMs) {
@@ -539,10 +659,14 @@ function drawPots() {
   }
 }
 
+// Ground pot: big terracotta planter that sits on the soil line.
+// Hanging pots are drawn separately (smaller scale) and unaffected by these dims.
+const GROUND_POT = { topW: 70, botW: 50, h: 42, rimH: 6 };
+
 function drawPot(cx, sy) {
-  // Pot is 5× smaller than before — sits compactly on the soil line.
-  const topW = 10, botW = 7, h = 6;
+  const { topW, botW, h, rimH } = GROUND_POT;
   ctx.save();
+  // Body
   ctx.fillStyle = '#b85a28';
   ctx.beginPath();
   ctx.moveTo(cx - topW / 2, sy);
@@ -551,8 +675,18 @@ function drawPot(cx, sy) {
   ctx.lineTo(cx - botW / 2, sy + h);
   ctx.closePath();
   ctx.fill();
+  // Rim
   ctx.fillStyle = '#8a3818';
-  ctx.fillRect(cx - topW / 2 - 1, sy - 1, topW + 2, 2);
+  ctx.fillRect(cx - topW / 2 - 3, sy - rimH, topW + 6, rimH);
+  // Subtle shading on the lower-right side
+  ctx.fillStyle = 'rgba(0,0,0,0.12)';
+  ctx.beginPath();
+  ctx.moveTo(cx + topW / 2 - 4, sy);
+  ctx.lineTo(cx + topW / 2, sy);
+  ctx.lineTo(cx + botW / 2, sy + h);
+  ctx.lineTo(cx + botW / 2 - 4, sy + h);
+  ctx.closePath();
+  ctx.fill();
   ctx.restore();
 }
 
@@ -645,8 +779,11 @@ function drawThirstAlerts(nowMs) {
   ctx.restore();
 }
 
-// The tiny pot (≤7px tall) no longer obstructs HUD overlays, so no offset.
-function overlayOffset(_idx) { return 0; }
+// Shift HUD overlays below the pot when this plot is potted, so the
+// progress bar and thirst alerts clear the rim.
+function overlayOffset(idx) {
+  return state.potPlots.includes(idx) ? GROUND_POT.h + 6 : 0;
+}
 
 function drawProgressBars(nowMs) {
   const W = 70, H = 6;

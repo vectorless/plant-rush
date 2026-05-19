@@ -21,8 +21,13 @@ const STEPS = [
     auto: true, // advance when a harvest happens
   },
   {
+    title: 'Watch out for bugs',
+    body: '🐞 Ladybugs land on your plants and EAT their growth. Tap a bug to flick it off before it ruins the harvest. In SHOP you can buy a 🛡 Plant Shield for 50c — pick one plot, bugs can never touch it.',
+    cta: 'GOT IT',
+  },
+  {
     title: 'You\'re all set',
-    body: 'SHOP — buy upgrades, more plots, and mythic seeds (with gems). DAILY — claim 10 💎 every day. PHOTO + GALLERY — snap your favorites. Happy gardening!',
+    body: 'SHOP — buy upgrades, plots, hanging pots, shields, and mythic seeds (with gems). DAILY — claim 10 💎 every day. PHOTO + GALLERY — snap your favorites. Press R to redeem codes. Happy gardening!',
     cta: 'FINISH',
   },
 ];

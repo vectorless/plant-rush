@@ -1,12 +1,13 @@
 import { state, plotState, applyWater, harvest,
   movePlant, addDecor, removeDecor, togglePot,
   isHangingPotPending, attachHangingPot, removeHangingPot,
-  waterHanging, harvestHanging } from './state.js';
-import { hitTest, hitTestDecor, hitTestHanging, spawnWaterEffect, snapshotPlant, cssToFrac, setDecorPreview } from './renderer.js';
+  waterHanging, harvestHanging,
+  isShieldPending, attachShield, killBug } from './state.js';
+import { hitTest, hitTestDecor, hitTestHanging, hitTestBug, spawnWaterEffect, snapshotPlant, cssToFrac, setDecorPreview } from './renderer.js';
 import { openSeedPicker, openHangingSeedPicker, showToast, refreshCoins,
   isPhotoMode, setPhotoMode,
   isEditMode, getEditTool, getEditMoveSrc, setEditMoveSrc,
-  onHangingAttached, refreshHangBanner } from './ui.js';
+  onHangingAttached, refreshHangBanner, onShieldAttached } from './ui.js';
 import { speciesById } from './plants.js';
 import { addPhoto } from './gallery.js';
 
@@ -42,8 +43,29 @@ export function initInput() {
       return;
     }
 
+    if (isShieldPending()) {
+      const idx = hitTest(x, y);
+      if (idx >= 0) {
+        if (attachShield(idx)) {
+          onShieldAttached();
+        } else {
+          showToast('That plot is already shielded');
+        }
+      } else {
+        showToast('Click a plant plot to shield it');
+      }
+      return;
+    }
+
     if (isEditMode()) {
       handleEditClick(x, y);
+      return;
+    }
+
+    // Bugs are tiny and overlap plants — check them first.
+    const bugId = hitTestBug(x, y);
+    if (bugId) {
+      if (killBug(bugId)) showToast('Bug off!');
       return;
     }
 

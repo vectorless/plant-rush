@@ -1,4 +1,4 @@
-import { state, advanceGrowth, applyOfflineCatchup, topUpCoins, TICK_MS } from './state.js';
+import { state, advanceGrowth, applyOfflineCatchup, topUpCoins, tickBugs, TICK_MS } from './state.js';
 import { loadState, saveState } from './store.js';
 import { loadGallery } from './gallery.js';
 import { initRenderer, render } from './renderer.js';
@@ -31,6 +31,7 @@ if (dailyEligible()) {
 let lastCoinDisplay = -1;
 setInterval(() => {
   advanceGrowth();
+  tickBugs();
   topUpCoins();
   if (state.coins !== lastCoinDisplay) {
     refreshCoins();
