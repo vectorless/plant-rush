@@ -2,12 +2,13 @@ import { state, plotState, applyWater, harvest,
   movePlant, addDecor, removeDecor, togglePot,
   isHangingPotPending, attachHangingPot, removeHangingPot,
   waterHanging, harvestHanging,
-  isShieldPending, attachShield, killBug } from './state.js';
+  isShieldPending, attachShield, killBug,
+  isSprinklerPending, placeSprinkler } from './state.js';
 import { hitTest, hitTestDecor, hitTestHanging, hitTestBug, spawnWaterEffect, spawnSprayEffect, snapshotPlant, cssToFrac, setDecorPreview } from './renderer.js';
 import { openSeedPicker, openHangingSeedPicker, showToast, refreshCoins,
   isPhotoMode, setPhotoMode,
   isEditMode, getEditTool, getEditMoveSrc, setEditMoveSrc,
-  onHangingAttached, refreshHangBanner, onShieldAttached } from './ui.js';
+  onHangingAttached, refreshHangBanner, onShieldAttached, onSprinklerPlaced } from './ui.js';
 import { speciesById } from './plants.js';
 import { addPhoto } from './gallery.js';
 
@@ -40,6 +41,12 @@ export function initInput() {
       } else {
         showToast('Click a tree, bush, house, fence, or rock');
       }
+      return;
+    }
+
+    if (isSprinklerPending()) {
+      const { xFrac } = cssToFrac(x, y);
+      if (placeSprinkler(xFrac)) onSprinklerPlaced();
       return;
     }
 

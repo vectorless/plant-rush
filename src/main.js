@@ -1,7 +1,7 @@
-import { state, advanceGrowth, applyOfflineCatchup, topUpCoins, tickBugs, TICK_MS } from './state.js';
+import { state, advanceGrowth, applyOfflineCatchup, topUpCoins, tickBugs, tickSprinklers, TICK_MS } from './state.js';
 import { loadState, saveState } from './store.js';
 import { loadGallery } from './gallery.js';
-import { initRenderer, render } from './renderer.js';
+import { initRenderer, render, spawnWaterEffect } from './renderer.js';
 import { initInput } from './input.js';
 import { initUI, refreshCoins, openDaily, refreshDailyBtn } from './ui.js';
 import { dailyEligible } from './state.js';
@@ -31,6 +31,8 @@ if (dailyEligible()) {
 let lastCoinDisplay = -1;
 setInterval(() => {
   advanceGrowth();
+  const watered = tickSprinklers();
+  for (const i of watered) spawnWaterEffect(i);
   tickBugs();
   topUpCoins();
   if (state.coins !== lastCoinDisplay) {

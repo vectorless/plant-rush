@@ -1,4 +1,4 @@
-import { state, plotState, isPlotShielded, BUG_WARNING_MS } from './state.js';
+import { state, plotState, isPlotShielded, BUG_WARNING_MS, SPRINKLER_INTERVAL_MS, SPRINKLERS } from './state.js';
 import { speciesById } from './plants.js';
 
 const SOIL_Y_FRAC = 0.62;  // soil line as fraction of canvas CSS height
@@ -273,6 +273,7 @@ export function render(nowMs) {
   drawAffordances(nowMs);
   drawProgressBars(nowMs);
   drawThirstAlerts(nowMs);
+  drawSprinklers(nowMs);
   drawShields(nowMs);
   drawBugWarning(nowMs);
   drawBugs(nowMs);
@@ -280,6 +281,69 @@ export function render(nowMs) {
   drawPlantNames(nowMs);
   drawEditOverlay(nowMs);
   drawDecorPreview();
+}
+
+// ─── SPRINKLERS ────────────────────────────────────────────────────────────
+
+function drawSprinklers(nowMs) {
+  const soilY = cssH * SOIL_Y_FRAC;
+  for (const s of state.sprinklers) {
+    const cfg = SPRINKLERS[s.type];
+    if (!cfg) continue;
+    const x = s.xFrac * cssW;
+    // Fraction of the cycle left until next watering: 1 = just watered, 0 = about to water.
+    const remaining = Math.max(0, s.nextWaterAt - Date.now());
+    const cycleT = 1 - remaining / SPRINKLER_INTERVAL_MS;
+    drawSprinklerSprite(x, soilY, cfg, cycleT, nowMs);
+  }
+}
+
+function drawSprinklerSprite(x, y, cfg, cycleT, nowMs) {
+  const isGood = cfg.id === 'good';
+  ctx.save();
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 4, 12, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Base
+  ctx.fillStyle = isGood ? '#c0a060' : '#7a7a7a';
+  ctx.strokeStyle = '#2a2018';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.rect(x - 6, y - 6, 12, 8);
+  ctx.fill();
+  ctx.stroke();
+  // Stem
+  ctx.fillStyle = isGood ? '#a88840' : '#5a5a5a';
+  ctx.fillRect(x - 2, y - 18, 4, 12);
+  // Head — small pivoting cross
+  const spin = nowMs / 600 + (isGood ? 0.5 : 0);
+  ctx.save();
+  ctx.translate(x, y - 20);
+  ctx.rotate(spin);
+  ctx.fillStyle = isGood ? '#ffd870' : '#c0c0c0';
+  ctx.beginPath();
+  ctx.arc(0, 0, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#2a2018';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-7, 0); ctx.lineTo(7, 0);
+  ctx.moveTo(0, -3); ctx.lineTo(0, 3);
+  ctx.stroke();
+  ctx.restore();
+  // Spray puff that ramps as we approach the next watering tick
+  if (cycleT > 0.85) {
+    const puff = (cycleT - 0.85) / 0.15;
+    ctx.fillStyle = `rgba(120, 200, 255, ${0.45 * puff})`;
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.arc(x + i * 6, y - 24 - puff * 4, 2 + puff * 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
 }
 
 // ─── BUGS & SHIELDS ────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-import { state, STARTING_COINS, STARTING_GEMS, STARTING_PLOTS, MAX_PLOTS, UPGRADES, SKINS, DECOR_TYPES } from './state.js';
+import { state, STARTING_COINS, STARTING_GEMS, STARTING_PLOTS, MAX_PLOTS, UPGRADES, SKINS, DECOR_TYPES, SPRINKLERS, SPRINKLER_INTERVAL_MS } from './state.js';
 import { SPECIES, speciesById, DEFAULT_UNLOCKED } from './plants.js';
 
 const KEY = 'plant_rush:v1';
@@ -21,9 +21,29 @@ export function loadState() {
     state.decor = mergeDecor(data.decor);
     state.hangingPots = mergeHangingPots(data.hangingPots, state.decor);
     state.shieldedPlots = mergeShielded(data.shieldedPlots, state.plotCount);
+    state.sprinklers = mergeSprinklers(data.sprinklers);
   } catch (e) {
     resetDefaults();
   }
+}
+
+function mergeSprinklers(a) {
+  if (!Array.isArray(a)) return [];
+  const now = Date.now();
+  const out = [];
+  for (const s of a) {
+    if (!s || typeof s !== 'object') continue;
+    if (!SPRINKLERS[s.type]) continue;
+    if (!Number.isFinite(s.xFrac)) continue;
+    out.push({
+      id: typeof s.id === 'string' ? s.id : `spr_${Math.random().toString(36).slice(2, 9)}`,
+      type: s.type,
+      xFrac: Math.max(0, Math.min(1, s.xFrac)),
+      // Spread the first watering window so reloading doesn't dump all sprinklers at once.
+      nextWaterAt: Number.isFinite(s.nextWaterAt) ? s.nextWaterAt : now + SPRINKLER_INTERVAL_MS,
+    });
+  }
+  return out;
 }
 
 function mergeShielded(a, n) {
@@ -100,6 +120,7 @@ function resetDefaults() {
   state.decor = [];
   state.hangingPots = [];
   state.shieldedPlots = [];
+  state.sprinklers = [];
 }
 
 function mergeHangingPots(a, decor) {
@@ -176,6 +197,7 @@ export function saveState() {
     decor: state.decor,
     hangingPots: state.hangingPots,
     shieldedPlots: state.shieldedPlots,
+    sprinklers: state.sprinklers,
   };
   localStorage.setItem(KEY, JSON.stringify(data));
 }

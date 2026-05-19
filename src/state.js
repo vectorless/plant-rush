@@ -22,6 +22,14 @@ export const DECOR_TYPES = ['tree', 'bush', 'house', 'fence', 'rock'];
 
 // ─── BUGS & SHIELDS ────────────────────────────────────────────────────────
 export const SHIELD_COST            = 50;     // coins per plot
+
+// ─── SPRINKLERS ────────────────────────────────────────────────────────────
+// Auto-water the N plots nearest the sprinkler every 10 s.
+export const SPRINKLER_INTERVAL_MS  = 10_000;
+export const SPRINKLERS = {
+  bad:  { id: 'bad',  name: 'Tin Sprinkler',  range: 2, cost: 180 },
+  good: { id: 'good', name: 'Brass Sprinkler', range: 6, cost: 700 },
+};
 // Bugs are spawn-then-eat; players tap to flick them off before they ruin growth.
 export const BUG_SPAWN_BASE_MS      = 22_000; // average gap between spawns at 1 plot
 export const BUG_SPAWN_VAR_MS       = 12_000; // random extra delay
@@ -82,6 +90,7 @@ export const state = {
   shieldedPlots: [],    // plot indices protected from bugs
   bugs: [],             // [{id, plotIdx, sideSign, angle, jitter}] — transient, not persisted
   bugWarning: null,     // null | {plotIdx, spawnAt} — heads-up before bug appears
+  sprinklers: [],       // [{id, type, xFrac, nextWaterAt}]
 };
 
 export function todayKey(d = new Date()) {
@@ -530,4 +539,77 @@ export function killBug(bugId) {
   if (i < 0) return false;
   state.bugs.splice(i, 1);
   return true;
+}
+
+// ─── SPRINKLER PLACEMENT + TICK ────────────────────────────────────────────
+
+let pendingSprinklerType = null; // 'bad' | 'good' | null
+
+export function isSprinklerPending() { return pendingSprinklerType !== null; }
+export function getPendingSprinklerType() { return pendingSprinklerType; }
+
+export function buySprinkler(type) {
+  if (pendingSprinklerType) return false;
+  const cfg = SPRINKLERS[type];
+  if (!cfg) return false;
+  if (state.coins < cfg.cost) return false;
+  state.coins -= cfg.cost;
+  pendingSprinklerType = type;
+  return true;
+}
+
+export function cancelSprinklerPlacement() {
+  if (!pendingSprinklerType) return false;
+  const cfg = SPRINKLERS[pendingSprinklerType];
+  state.coins += cfg.cost;
+  pendingSprinklerType = null;
+  return true;
+}
+
+export function placeSprinkler(xFrac, now = Date.now()) {
+  if (!pendingSprinklerType) return false;
+  const type = pendingSprinklerType;
+  const id = `spr_${now.toString(36)}_${Math.floor(Math.random() * 1e4).toString(36)}`;
+  state.sprinklers.push({
+    id, type,
+    xFrac: Math.max(0.02, Math.min(0.98, xFrac)),
+    nextWaterAt: now + SPRINKLER_INTERVAL_MS,
+  });
+  pendingSprinklerType = null;
+  return true;
+}
+
+export function removeSprinkler(id) {
+  const i = state.sprinklers.findIndex(s => s.id === id);
+  if (i < 0) return false;
+  state.sprinklers.splice(i, 1);
+  return true;
+}
+
+function nearestPlots(xFrac, range) {
+  const n = state.plotCount;
+  if (n === 0) return [];
+  const ranked = [];
+  for (let i = 0; i < n; i++) {
+    const pf = (i + 0.5) / n; // approximation of plot center, evenly spaced
+    ranked.push({ i, d: Math.abs(pf - xFrac) });
+  }
+  ranked.sort((a, b) => a.d - b.d);
+  return ranked.slice(0, Math.min(range, n)).map(r => r.i);
+}
+
+// Returns the list of plot indices watered this tick, so the renderer can
+// spawn visual splashes on each affected plot.
+export function tickSprinklers(now = Date.now()) {
+  const watered = [];
+  for (const s of state.sprinklers) {
+    if (now < s.nextWaterAt) continue;
+    const cfg = SPRINKLERS[s.type];
+    if (!cfg) continue;
+    for (const i of nearestPlots(s.xFrac, cfg.range)) {
+      if (applyWater(i, now)) watered.push(i);
+    }
+    s.nextWaterAt = now + SPRINKLER_INTERVAL_MS;
+  }
+  return watered;
 }

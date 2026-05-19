@@ -7,6 +7,8 @@ import {
   plantInHanging, tradeGemForCoins, GEM_TO_COINS,
   redeemCode,
   SHIELD_COST, buyShieldPending, isShieldPending, cancelShieldPlacement,
+  SPRINKLERS, SPRINKLER_INTERVAL_MS, buySprinkler, isSprinklerPending,
+  cancelSprinklerPlacement, getPendingSprinklerType,
 } from './state.js';
 import { SPECIES, speciesById, MYTHIC_IDS } from './plants.js';
 import { relayout, setPhotoModeVisual, setEditModeVisual, setDecorPreview } from './renderer.js';
@@ -23,6 +25,7 @@ const photoBanner  = document.getElementById('photoBanner');
 const editBanner   = document.getElementById('editBanner');
 const hangBanner   = document.getElementById('hangBanner');
 const shieldBanner = document.getElementById('shieldBanner');
+const sprinklerBanner = document.getElementById('sprinklerBanner');
 const editToolbar  = document.getElementById('editToolbar');
 const editDoneBtn  = document.getElementById('editDoneBtn');
 const backdrop     = document.getElementById('modalBackdrop');
@@ -102,6 +105,22 @@ export function onShieldAttached() {
   refreshShieldBanner();
 }
 
+// ─── SPRINKLER PLACEMENT ───────────────────────────────────────────────────
+export function refreshSprinklerBanner() {
+  if (sprinklerBanner) sprinklerBanner.classList.toggle('hidden', !isSprinklerPending());
+}
+export function cancelSprinklerPlace() {
+  if (cancelSprinklerPlacement()) {
+    showToast('Refunded');
+    refreshCoins();
+    refreshSprinklerBanner();
+  }
+}
+export function onSprinklerPlaced() {
+  showToast('Sprinkler placed');
+  refreshSprinklerBanner();
+}
+
 function refreshEditToolbar() {
   const buttons = editToolbar.querySelectorAll('button.tool');
   for (const b of buttons) {
@@ -148,6 +167,7 @@ export function initUI() {
     if (e.key === 'Escape') {
       if (isHangingPotPending()) cancelHangingPlacement();
       if (isShieldPending()) cancelShieldPlace();
+      if (isSprinklerPending()) cancelSprinklerPlace();
       if (photoMode) setPhotoMode(false);
       if (editMode) setEditMode(false);
       closeModal();
@@ -392,6 +412,8 @@ export function openShop() {
     modal.appendChild(buildPlotRow());
     modal.appendChild(buildHangingPotRow());
     modal.appendChild(buildShieldRow());
+    modal.appendChild(buildSprinklerRow('bad'));
+    modal.appendChild(buildSprinklerRow('good'));
 
     const tEx = document.createElement('div');
     tEx.className = 'section-title';
@@ -667,6 +689,46 @@ function openLightbox(dataUrl) {
 function closeLightbox() {
   const box = document.getElementById('lightbox');
   if (box) box.remove();
+}
+
+function buildSprinklerRow(type) {
+  const cfg = SPRINKLERS[type];
+  const row = document.createElement('div');
+  row.className = 'row';
+  const placed = state.sprinklers.filter(s => s.type === type).length;
+  const isGood = type === 'good';
+  const swatchBg = isGood ? '#c0a060' : '#7a7a7a';
+  const swatchBorder = isGood ? '#ffd870' : '#cfcfcf';
+  const everyS = Math.round(SPRINKLER_INTERVAL_MS / 1000);
+  row.innerHTML = `
+    <div class="left">
+      <div class="swatch" style="background:${swatchBg}; border-color:${swatchBorder}; display:flex; align-items:center; justify-content:center; font-size:14px;">💧</div>
+      <div>
+        <div class="name">${cfg.name}</div>
+        <div class="meta">Waters ${cfg.range} nearest plants every ${everyS}s · ${placed} placed</div>
+      </div>
+    </div>
+  `;
+  const right = document.createElement('div');
+  right.style.display = 'flex';
+  right.style.alignItems = 'center';
+  const price = document.createElement('span');
+  price.className = 'price';
+  price.textContent = `${cfg.cost}c`;
+  const btn = document.createElement('button');
+  btn.textContent = 'BUY';
+  btn.disabled = state.coins < cfg.cost;
+  btn.addEventListener('click', () => {
+    if (buySprinkler(type)) {
+      refreshCoins();
+      refreshSprinklerBanner();
+      closeModal();
+    }
+  });
+  right.appendChild(price);
+  right.appendChild(btn);
+  row.appendChild(right);
+  return row;
 }
 
 function buildShieldRow() {
