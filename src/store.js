@@ -33,15 +33,22 @@ function mergeSprinklers(a) {
   const out = [];
   for (const s of a) {
     if (!s || typeof s !== 'object') continue;
-    if (!SPRINKLERS[s.type]) continue;
+    const cfg = SPRINKLERS[s.type];
+    if (!cfg) continue;
     if (!Number.isFinite(s.xFrac)) continue;
+    const placedAt = Number.isFinite(s.placedAt) ? s.placedAt : now;
+    const expiresAt = Number.isFinite(s.expiresAt) ? s.expiresAt : placedAt + cfg.lifetimeMs;
+    if (now >= expiresAt) continue; // already worn out while offline
     out.push({
       id: typeof s.id === 'string' ? s.id : `spr_${Math.random().toString(36).slice(2, 9)}`,
       type: s.type,
       xFrac: Math.max(0, Math.min(1, s.xFrac)),
       // Spread the first watering window so reloading doesn't dump all sprinklers at once.
       nextWaterAt: Number.isFinite(s.nextWaterAt) ? s.nextWaterAt : now + SPRINKLER_INTERVAL_MS,
+      placedAt,
+      expiresAt,
     });
+    if (out.length >= 1) break; // enforce the one-at-a-time rule on legacy saves too
   }
   return out;
 }

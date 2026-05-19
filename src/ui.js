@@ -695,17 +695,28 @@ function buildSprinklerRow(type) {
   const cfg = SPRINKLERS[type];
   const row = document.createElement('div');
   row.className = 'row';
-  const placed = state.sprinklers.filter(s => s.type === type).length;
   const isGood = type === 'good';
   const swatchBg = isGood ? '#c0a060' : '#7a7a7a';
   const swatchBorder = isGood ? '#ffd870' : '#cfcfcf';
   const everyS = Math.round(SPRINKLER_INTERVAL_MS / 1000);
+  const lifeMin = Math.round(cfg.lifetimeMs / 60_000);
+  // Status: any existing sprinkler? show remaining lifetime if it's THIS type.
+  const existing = state.sprinklers[0];
+  const sameType = existing && existing.type === type;
+  let metaSuffix = `Lasts ${lifeMin} min`;
+  if (sameType) {
+    const remainMs = Math.max(0, (existing.expiresAt || 0) - Date.now());
+    const remainMin = Math.ceil(remainMs / 60_000);
+    metaSuffix = `PLACED · ${remainMin} min left — tap it in the garden to remove`;
+  } else if (existing) {
+    metaSuffix = `Lasts ${lifeMin} min · remove the other sprinkler first`;
+  }
   row.innerHTML = `
     <div class="left">
       <div class="swatch" style="background:${swatchBg}; border-color:${swatchBorder}; display:flex; align-items:center; justify-content:center; font-size:14px;">💧</div>
       <div>
         <div class="name">${cfg.name}</div>
-        <div class="meta">Waters ${cfg.range} nearest plants every ${everyS}s · ${placed} placed</div>
+        <div class="meta">Waters ${cfg.range} nearest plants every ${everyS}s · ${metaSuffix}</div>
       </div>
     </div>
   `;
@@ -717,7 +728,7 @@ function buildSprinklerRow(type) {
   price.textContent = `${cfg.cost}c`;
   const btn = document.createElement('button');
   btn.textContent = 'BUY';
-  btn.disabled = state.coins < cfg.cost;
+  btn.disabled = state.coins < cfg.cost || !!existing;
   btn.addEventListener('click', () => {
     if (buySprinkler(type)) {
       refreshCoins();

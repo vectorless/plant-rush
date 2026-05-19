@@ -24,11 +24,12 @@ export const DECOR_TYPES = ['tree', 'bush', 'house', 'fence', 'rock'];
 export const SHIELD_COST            = 50;     // coins per plot
 
 // ─── SPRINKLERS ────────────────────────────────────────────────────────────
-// Auto-water the N plots nearest the sprinkler every 10 s.
+// Auto-water the N plots nearest the sprinkler every 10 s. Sprinklers wear
+// out after lifetimeMs and only one may be placed at a time.
 export const SPRINKLER_INTERVAL_MS  = 10_000;
 export const SPRINKLERS = {
-  bad:  { id: 'bad',  name: 'Tin Sprinkler',  range: 2, cost: 180 },
-  good: { id: 'good', name: 'Brass Sprinkler', range: 6, cost: 700 },
+  bad:  { id: 'bad',  name: 'Tin Sprinkler',   range: 2, cost: 180, lifetimeMs:  5 * 60 * 1000 },
+  good: { id: 'good', name: 'Brass Sprinkler', range: 6, cost: 700, lifetimeMs: 30 * 60 * 1000 },
 };
 // Bugs are spawn-then-eat; players tap to flick them off before they ruin growth.
 export const BUG_SPAWN_BASE_MS      = 22_000; // average gap between spawns at 1 plot
@@ -550,6 +551,7 @@ export function getPendingSprinklerType() { return pendingSprinklerType; }
 
 export function buySprinkler(type) {
   if (pendingSprinklerType) return false;
+  if (state.sprinklers.length > 0) return false; // one sprinkler at a time
   const cfg = SPRINKLERS[type];
   if (!cfg) return false;
   if (state.coins < cfg.cost) return false;
@@ -568,12 +570,16 @@ export function cancelSprinklerPlacement() {
 
 export function placeSprinkler(xFrac, now = Date.now()) {
   if (!pendingSprinklerType) return false;
+  if (state.sprinklers.length > 0) return false; // belt-and-braces: one at a time
   const type = pendingSprinklerType;
+  const cfg = SPRINKLERS[type];
   const id = `spr_${now.toString(36)}_${Math.floor(Math.random() * 1e4).toString(36)}`;
   state.sprinklers.push({
     id, type,
     xFrac: Math.max(0.02, Math.min(0.98, xFrac)),
     nextWaterAt: now + SPRINKLER_INTERVAL_MS,
+    placedAt: now,
+    expiresAt: now + cfg.lifetimeMs,
   });
   pendingSprinklerType = null;
   return true;
@@ -602,6 +608,8 @@ function nearestPlots(xFrac, range) {
 // spawn visual splashes on each affected plot.
 export function tickSprinklers(now = Date.now()) {
   const watered = [];
+  // Expire used-up sprinklers first so they don't fire on their last tick.
+  state.sprinklers = state.sprinklers.filter(s => !s.expiresAt || now < s.expiresAt);
   for (const s of state.sprinklers) {
     if (now < s.nextWaterAt) continue;
     const cfg = SPRINKLERS[s.type];

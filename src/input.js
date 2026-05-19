@@ -3,8 +3,8 @@ import { state, plotState, applyWater, harvest,
   isHangingPotPending, attachHangingPot, removeHangingPot,
   waterHanging, harvestHanging,
   isShieldPending, attachShield, killBug,
-  isSprinklerPending, placeSprinkler } from './state.js';
-import { hitTest, hitTestDecor, hitTestHanging, hitTestBug, spawnWaterEffect, spawnSprayEffect, snapshotPlant, cssToFrac, setDecorPreview } from './renderer.js';
+  isSprinklerPending, placeSprinkler, removeSprinkler } from './state.js';
+import { hitTest, hitTestDecor, hitTestHanging, hitTestBug, hitTestSprinkler, spawnWaterEffect, spawnSprayEffect, snapshotPlant, cssToFrac, setDecorPreview } from './renderer.js';
 import { openSeedPicker, openHangingSeedPicker, showToast, refreshCoins,
   isPhotoMode, setPhotoMode,
   isEditMode, getEditTool, getEditMoveSrc, setEditMoveSrc,
@@ -74,6 +74,13 @@ export function initInput() {
     const bugId = hitTestBug(x, y);
     if (bugId) {
       if (killBug(bugId)) showToast('Bug off!');
+      return;
+    }
+
+    // Tap the sprinkler to pick it up (no refund).
+    const sprId = hitTestSprinkler(x, y);
+    if (sprId) {
+      if (removeSprinkler(sprId)) showToast('Sprinkler removed');
       return;
     }
 

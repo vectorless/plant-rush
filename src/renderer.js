@@ -287,15 +287,41 @@ export function render(nowMs) {
 
 function drawSprinklers(nowMs) {
   const soilY = cssH * SOIL_Y_FRAC;
+  const now = Date.now();
   for (const s of state.sprinklers) {
     const cfg = SPRINKLERS[s.type];
     if (!cfg) continue;
     const x = s.xFrac * cssW;
-    // Fraction of the cycle left until next watering: 1 = just watered, 0 = about to water.
-    const remaining = Math.max(0, s.nextWaterAt - Date.now());
+    const remaining = Math.max(0, s.nextWaterAt - now);
     const cycleT = 1 - remaining / SPRINKLER_INTERVAL_MS;
     drawSprinklerSprite(x, soilY, cfg, cycleT, nowMs);
+
+    // Lifetime bar above the sprinkler (drains left → right).
+    const total = cfg.lifetimeMs;
+    const lifeLeft = Math.max(0, (s.expiresAt || 0) - now);
+    const lifeFrac = total > 0 ? Math.max(0, Math.min(1, lifeLeft / total)) : 0;
+    const barW = 28, barH = 3;
+    const bx = x - barW / 2, by = soilY - 32;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(bx, by, barW, barH);
+    ctx.fillStyle = cfg.id === 'good' ? '#ffd870' : '#a8d8ff';
+    ctx.fillRect(bx, by, barW * lifeFrac, barH);
+    ctx.restore();
   }
+}
+
+// Tap-to-remove hit area covers the sprinkler base + head.
+export function hitTestSprinkler(cssX, cssY) {
+  const soilY = cssH * SOIL_Y_FRAC;
+  for (let i = state.sprinklers.length - 1; i >= 0; i--) {
+    const s = state.sprinklers[i];
+    const x = s.xFrac * cssW;
+    if (cssX >= x - 12 && cssX <= x + 12 && cssY >= soilY - 28 && cssY <= soilY + 8) {
+      return s.id;
+    }
+  }
+  return null;
 }
 
 function drawSprinklerSprite(x, y, cfg, cycleT, nowMs) {
