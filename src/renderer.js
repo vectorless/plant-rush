@@ -405,33 +405,77 @@ function drawShields(nowMs) {
   for (const idx of state.shieldedPlots) {
     const r = plotRects[idx];
     if (!r) continue;
-    // Hovering shield badge above the plot.
+    // Hovering spray-can badge above the plot.
     const bob = Math.sin(nowMs / 700 + idx) * 2;
     const cx = r.soilX + 38;
     const cy = r.soilY - 30 + bob;
-    // Badge background
-    ctx.fillStyle = 'rgba(20, 40, 70, 0.78)';
-    ctx.strokeStyle = '#8ac4ff';
+    // Can body
+    ctx.fillStyle = '#2a6a30';
+    ctx.strokeStyle = '#8ce888';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(cx, cy - 9);
-    ctx.lineTo(cx + 7, cy - 6);
-    ctx.lineTo(cx + 7, cy + 2);
-    ctx.quadraticCurveTo(cx + 7, cy + 8, cx, cy + 10);
-    ctx.quadraticCurveTo(cx - 7, cy + 8, cx - 7, cy + 2);
-    ctx.lineTo(cx - 7, cy - 6);
-    ctx.closePath();
+    ctx.rect(cx - 5, cy - 4, 10, 12);
     ctx.fill();
     ctx.stroke();
-    // Cross
-    ctx.strokeStyle = '#a8d8ff';
-    ctx.lineWidth = 1.2;
+    // Nozzle/cap
+    ctx.fillStyle = '#8ce888';
     ctx.beginPath();
-    ctx.moveTo(cx, cy - 5);
-    ctx.lineTo(cx, cy + 5);
-    ctx.moveTo(cx - 3, cy);
-    ctx.lineTo(cx + 3, cy);
-    ctx.stroke();
+    ctx.rect(cx - 3, cy - 8, 6, 4);
+    ctx.fill();
+    // Spray puff coming out the top
+    const puff = 0.5 + 0.5 * Math.sin(nowMs / 240 + idx);
+    ctx.fillStyle = `rgba(168, 232, 160, ${0.5 + 0.4 * puff})`;
+    ctx.beginPath();
+    ctx.arc(cx, cy - 12, 2 + puff * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ─── BUG SPRAY PARTICLES ───────────────────────────────────────────────────
+
+export function spawnSprayEffect(plotIdx) {
+  // 18 little green specks puffing upward and outward from the plant base.
+  const N = 18;
+  const particles = [];
+  for (let i = 0; i < N; i++) {
+    const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.9;
+    const speed = 60 + Math.random() * 80;
+    particles.push({
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 900 + Math.random() * 400,
+      size: 2 + Math.random() * 2,
+      hue: 100 + Math.random() * 30, // greens
+    });
+  }
+  effects.push({
+    type: 'spray',
+    plotIdx,
+    start: performance.now(),
+    duration: 1300,
+    particles,
+  });
+}
+
+function drawSprayEffect(e, age) {
+  const r = plotRects[e.plotIdx];
+  if (!r) return;
+  const t = age / 1000; // seconds since start
+  ctx.save();
+  for (const p of e.particles) {
+    if (age > p.life) continue;
+    const lifeT = age / p.life;
+    // Decel + slight gravity so puff drifts up then settles.
+    const drag = Math.exp(-2.0 * t);
+    const x = r.soilX + p.vx * t * drag;
+    const y = r.soilY - 10 + p.vy * t * drag + 90 * lifeT * lifeT;
+    const alpha = 0.9 * (1 - lifeT);
+    const size = p.size * (1 + lifeT * 0.6);
+    ctx.fillStyle = `hsla(${p.hue}, 75%, 55%, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(x, y, size, 0, Math.PI * 2);
+    ctx.fill();
   }
   ctx.restore();
 }
@@ -885,6 +929,7 @@ function drawEffects(nowMs) {
     const age = nowMs - e.start;
     if (age >= e.duration) { effects.splice(i, 1); continue; }
     if (e.type === 'water') drawWaterEffect(e, age);
+    else if (e.type === 'spray') drawSprayEffect(e, age);
   }
 }
 

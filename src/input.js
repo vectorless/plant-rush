@@ -3,7 +3,7 @@ import { state, plotState, applyWater, harvest,
   isHangingPotPending, attachHangingPot, removeHangingPot,
   waterHanging, harvestHanging,
   isShieldPending, attachShield, killBug } from './state.js';
-import { hitTest, hitTestDecor, hitTestHanging, hitTestBug, spawnWaterEffect, snapshotPlant, cssToFrac, setDecorPreview } from './renderer.js';
+import { hitTest, hitTestDecor, hitTestHanging, hitTestBug, spawnWaterEffect, spawnSprayEffect, snapshotPlant, cssToFrac, setDecorPreview } from './renderer.js';
 import { openSeedPicker, openHangingSeedPicker, showToast, refreshCoins,
   isPhotoMode, setPhotoMode,
   isEditMode, getEditTool, getEditMoveSrc, setEditMoveSrc,
@@ -47,12 +47,13 @@ export function initInput() {
       const idx = hitTest(x, y);
       if (idx >= 0) {
         if (attachShield(idx)) {
+          spawnSprayEffect(idx);
           onShieldAttached();
         } else {
-          showToast('That plot is already shielded');
+          showToast('That plot is already sprayed');
         }
       } else {
-        showToast('Click a plant plot to shield it');
+        showToast('Click a plant plot to spray it');
       }
       return;
     }

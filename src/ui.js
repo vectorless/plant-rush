@@ -86,19 +86,19 @@ export function onHangingAttached() {
   refreshHangBanner();
 }
 
-// ─── SHIELD PLACEMENT ──────────────────────────────────────────────────────
+// ─── BUG SPRAY PLACEMENT ───────────────────────────────────────────────────
 export function refreshShieldBanner() {
   if (shieldBanner) shieldBanner.classList.toggle('hidden', !isShieldPending());
 }
 export function cancelShieldPlace() {
   if (cancelShieldPlacement()) {
-    showToast('Shield refunded');
+    showToast('Refunded');
     refreshCoins();
     refreshShieldBanner();
   }
 }
 export function onShieldAttached() {
-  showToast('Shield up');
+  showToast('Bug spray applied');
   refreshShieldBanner();
 }
 
@@ -672,13 +672,13 @@ function closeLightbox() {
 function buildShieldRow() {
   const row = document.createElement('div');
   row.className = 'row';
-  const shielded = state.shieldedPlots.length;
+  const sprayed = state.shieldedPlots.length;
   row.innerHTML = `
     <div class="left">
-      <div class="swatch" style="background:#1a2c4a; border-color:#8ac4ff; color:#a8d8ff; display:flex; align-items:center; justify-content:center; font-size:14px;">🛡</div>
+      <div class="swatch" style="background:#1a3a1c; border-color:#8ce888; color:#cfffd0; display:flex; align-items:center; justify-content:center; font-size:14px;">🧪</div>
       <div>
-        <div class="name">+1 Plant Shield</div>
-        <div class="meta">Bugs can't touch the plant on the plot you choose. · ${shielded} active</div>
+        <div class="name">+1 Bug Spray</div>
+        <div class="meta">Permanently keeps bugs off the plot you choose. · ${sprayed} sprayed</div>
       </div>
     </div>
   `;
