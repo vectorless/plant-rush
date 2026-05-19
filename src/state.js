@@ -23,6 +23,43 @@ export const DECOR_TYPES = ['tree', 'bush', 'house', 'fence', 'rock'];
 // ─── BUGS & SHIELDS ────────────────────────────────────────────────────────
 export const SHIELD_COST            = 50;     // coins per plot
 
+// ─── POTIONS ───────────────────────────────────────────────────────────────
+// Recipes match on the COUNT of ingredients of each rarity in the brewing pot.
+// Order doesn't matter; exact-match only (no extras).
+export const RECIPES = [
+  {
+    id: 'growth',  name: 'Splash of Growth', color: '#5cb05c',
+    ingredients: { common: 2 },
+    desc: '+30% growth on the chosen plant.',
+  },
+  {
+    id: 'bugoff', name: 'Bug Repellent', color: '#8ce888',
+    ingredients: { uncommon: 2 },
+    desc: 'Permanently keeps bugs off the chosen plot.',
+  },
+  {
+    id: 'gilded', name: 'Gilded Touch', color: '#ffd24a',
+    ingredients: { rare: 1 },
+    desc: 'Next harvest from the chosen plot pays double.',
+  },
+];
+
+export function findRecipe(potIngredients) {
+  // potIngredients = { common: n, uncommon: n, ... }
+  outer:
+  for (const r of RECIPES) {
+    const want = r.ingredients;
+    const wantRarities = Object.keys(want);
+    const haveRarities = Object.keys(potIngredients).filter(k => potIngredients[k] > 0);
+    if (wantRarities.length !== haveRarities.length) continue;
+    for (const k of wantRarities) {
+      if (potIngredients[k] !== want[k]) continue outer;
+    }
+    return r;
+  }
+  return null;
+}
+
 // ─── SPRINKLERS ────────────────────────────────────────────────────────────
 // Auto-water the N plots nearest the sprinkler every 10 s. Sprinklers wear
 // out after lifetimeMs and only one may be placed at a time.
@@ -92,6 +129,9 @@ export const state = {
   bugs: [],             // [{id, plotIdx, sideSign, angle, jitter}] — transient, not persisted
   bugWarning: null,     // null | {plotIdx, spawnAt} — heads-up before bug appears
   sprinklers: [],       // [{id, type, xFrac, nextWaterAt}]
+  inventory: {},        // { [speciesId]: count } — built up by harvesting
+  potions: [],          // [{id, recipeId}] — brewed, not-yet-used
+  gildedPlots: [],      // plot indices whose next harvest pays 2×
 };
 
 export function todayKey(d = new Date()) {
@@ -195,9 +235,18 @@ export function harvest(plotIdx) {
   const plot = state.plots[plotIdx];
   if (!plot || !plot.species || plot.growthProgress < 1) return 0;
   const sp = speciesById(plot.species);
-  const value = Math.round(sp.harvestValue * harvestValueMult());
+  let value = Math.round(sp.harvestValue * harvestValueMult());
+  const gildedIdx = state.gildedPlots.indexOf(plotIdx);
+  if (gildedIdx >= 0) {
+    value *= 2;
+    state.gildedPlots.splice(gildedIdx, 1);
+  }
   state.coins += value;
+  state.inventory[sp.id] = (state.inventory[sp.id] || 0) + 1;
   state.plots[plotIdx] = null;
+  // Bug spray protects ONE plant — it's consumed when the plant is harvested.
+  const shieldIdx = state.shieldedPlots.indexOf(plotIdx);
+  if (shieldIdx >= 0) state.shieldedPlots.splice(shieldIdx, 1);
   return value;
 }
 
@@ -321,6 +370,7 @@ export function harvestHanging(id) {
   const sp = speciesById(hp.plot.species);
   const value = Math.round(sp.harvestValue * harvestValueMult());
   state.coins += value;
+  state.inventory[sp.id] = (state.inventory[sp.id] || 0) + 1;
   hp.plot = null;
   return value;
 }
@@ -602,6 +652,87 @@ function nearestPlots(xFrac, range) {
   }
   ranked.sort((a, b) => a.d - b.d);
   return ranked.slice(0, Math.min(range, n)).map(r => r.i);
+}
+
+// ─── POTION CRAFTING + APPLICATION ─────────────────────────────────────────
+
+function recipeById(id) { return RECIPES.find(r => r.id === id) || null; }
+
+// Brew a potion from a map of {speciesId: count} ingredients.
+// Returns the brewed potion record or { error: '...' } on failure.
+export function brewPotion(ingredientsBySpecies) {
+  const byRarity = {};
+  let any = false;
+  for (const [sid, n] of Object.entries(ingredientsBySpecies)) {
+    if (!Number.isInteger(n) || n <= 0) continue;
+    const sp = speciesById(sid);
+    if (!sp) return { error: 'Unknown ingredient' };
+    if ((state.inventory[sid] || 0) < n) return { error: `Not enough ${sp.name}` };
+    byRarity[sp.rarity] = (byRarity[sp.rarity] || 0) + n;
+    any = true;
+  }
+  if (!any) return { error: 'Empty pot' };
+  const recipe = findRecipe(byRarity);
+  if (!recipe) return { error: 'No recipe matches' };
+  // Consume ingredients.
+  for (const [sid, n] of Object.entries(ingredientsBySpecies)) {
+    state.inventory[sid] -= n;
+    if (state.inventory[sid] <= 0) delete state.inventory[sid];
+  }
+  const id = `pot_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e4).toString(36)}`;
+  const potion = { id, recipeId: recipe.id };
+  state.potions.push(potion);
+  return potion;
+}
+
+let pendingPotionId = null;
+
+export function isPotionPending() { return pendingPotionId !== null; }
+export function getPendingPotionId() { return pendingPotionId; }
+export function getPendingPotionRecipe() {
+  if (!pendingPotionId) return null;
+  const p = state.potions.find(p => p.id === pendingPotionId);
+  return p ? recipeById(p.recipeId) : null;
+}
+export function startPotionTargeting(potionId) {
+  if (!state.potions.find(p => p.id === potionId)) return false;
+  pendingPotionId = potionId;
+  return true;
+}
+export function cancelPotionTargeting() {
+  if (!pendingPotionId) return false;
+  pendingPotionId = null;
+  return true;
+}
+
+// Apply the currently-pending potion to plotIdx. Returns the recipe id on
+// success, null on failure (e.g. potion doesn't make sense for the plot).
+export function applyPendingPotionToPlot(plotIdx, now = Date.now()) {
+  if (!pendingPotionId) return null;
+  const i = state.potions.findIndex(p => p.id === pendingPotionId);
+  if (i < 0) { pendingPotionId = null; return null; }
+  const potion = state.potions[i];
+  const recipe = recipeById(potion.recipeId);
+  const plot = state.plots[plotIdx];
+  if (!recipe) { pendingPotionId = null; return null; }
+
+  if (recipe.id === 'growth') {
+    if (!plot || !plot.species || plot.growthProgress >= 1) return null;
+    plot.growthProgress = Math.min(1, plot.growthProgress + 0.30);
+  } else if (recipe.id === 'bugoff') {
+    if (plotIdx < 0 || plotIdx >= state.plotCount) return null;
+    if (!state.shieldedPlots.includes(plotIdx)) state.shieldedPlots.push(plotIdx);
+    // Also knock off any bugs currently on the plot.
+    state.bugs = state.bugs.filter(b => b.plotIdx !== plotIdx);
+  } else if (recipe.id === 'gilded') {
+    if (!plot || !plot.species) return null;
+    if (!state.gildedPlots.includes(plotIdx)) state.gildedPlots.push(plotIdx);
+  } else {
+    return null;
+  }
+  state.potions.splice(i, 1);
+  pendingPotionId = null;
+  return recipe.id;
 }
 
 // Returns the list of plot indices watered this tick, so the renderer can

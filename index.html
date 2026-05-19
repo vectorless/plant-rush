@@ -68,6 +68,10 @@
       background: rgba(20, 32, 24, 0.95); border: 1px solid #6cb4d8; color: #cfe6ff;
       padding: 8px 18px; border-radius: 4px; letter-spacing: 2px; font-size: 13px;
       pointer-events: none; z-index: 8; }
+    #potionBanner { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+      background: rgba(20, 32, 24, 0.95); border: 1px solid #c886ff; color: #efd8ff;
+      padding: 8px 18px; border-radius: 4px; letter-spacing: 2px; font-size: 13px;
+      pointer-events: none; z-index: 8; }
     #editToolbar { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
       display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center;
       background: rgba(14, 22, 16, 0.96); border: 1px solid #5a6878; border-radius: 8px;
@@ -211,6 +215,7 @@
       <button id="photoBtn">📷 PHOTO</button>
       <button id="galleryBtn">🖼 GALLERY</button>
       <button id="editBtn">🛠 EDIT</button>
+      <button id="potionsBtn">🧪 POTIONS</button>
       <button id="shopBtn">SHOP</button>
     </div>
   </div>
@@ -221,6 +226,7 @@
     <div id="hangBanner" class="hidden">🪴 Click a tree, bush, house, fence, or rock to hang your pot · ESC to cancel (refund)</div>
     <div id="shieldBanner" class="hidden">🧪 Click the plant plot you want to spray · ESC to cancel (refund)</div>
     <div id="sprinklerBanner" class="hidden">💧 Click where you want the sprinkler · ESC to cancel (refund)</div>
+    <div id="potionBanner" class="hidden">🧪 Click the plant you want to give the potion to · ESC to cancel</div>
     <div id="editToolbar" class="hidden">
       <button class="tool" data-tool="move" title="Swap two plots (click source, then destination)">↔ MOVE</button>
       <button class="tool" data-tool="pot" title="Toggle pot on a plot (requires skin)">🪴 POT</button>

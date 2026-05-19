@@ -3,12 +3,14 @@ import { state, plotState, applyWater, harvest,
   isHangingPotPending, attachHangingPot, removeHangingPot,
   waterHanging, harvestHanging,
   isShieldPending, attachShield, killBug,
-  isSprinklerPending, placeSprinkler, removeSprinkler } from './state.js';
-import { hitTest, hitTestDecor, hitTestHanging, hitTestBug, hitTestSprinkler, spawnWaterEffect, spawnSprayEffect, snapshotPlant, cssToFrac, setDecorPreview } from './renderer.js';
+  isSprinklerPending, placeSprinkler, removeSprinkler,
+  isPotionPending, getPendingPotionRecipe, applyPendingPotionToPlot } from './state.js';
+import { hitTest, hitTestDecor, hitTestHanging, hitTestBug, hitTestSprinkler, spawnWaterEffect, spawnSprayEffect, spawnPotionEffect, snapshotPlant, cssToFrac, setDecorPreview } from './renderer.js';
 import { openSeedPicker, openHangingSeedPicker, showToast, refreshCoins,
   isPhotoMode, setPhotoMode,
   isEditMode, getEditTool, getEditMoveSrc, setEditMoveSrc,
-  onHangingAttached, refreshHangBanner, onShieldAttached, onSprinklerPlaced } from './ui.js';
+  onHangingAttached, refreshHangBanner, onShieldAttached, onSprinklerPlaced,
+  onPotionApplied } from './ui.js';
 import { speciesById } from './plants.js';
 import { addPhoto } from './gallery.js';
 
@@ -47,6 +49,20 @@ export function initInput() {
     if (isSprinklerPending()) {
       const { xFrac } = cssToFrac(x, y);
       if (placeSprinkler(xFrac)) onSprinklerPlaced();
+      return;
+    }
+
+    if (isPotionPending()) {
+      const idx = hitTest(x, y);
+      if (idx < 0) { showToast('Click a plot to use the potion'); return; }
+      const recipe = getPendingPotionRecipe();
+      const used = applyPendingPotionToPlot(idx);
+      if (used && recipe) {
+        spawnPotionEffect(idx, recipe.color);
+        onPotionApplied(recipe.name);
+      } else {
+        showToast("That plot won't accept this potion");
+      }
       return;
     }
 

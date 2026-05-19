@@ -22,7 +22,7 @@ const STEPS = [
   },
   {
     title: 'Watch out for bugs',
-    body: '🐞 Ladybugs only land on THIRSTY plants — keep the water bar blue and they stay away. If one does land, a ⚠ BUG warning flashes 3 seconds early; tap the bug to flick it off. In SHOP you can buy 🧪 Bug Spray for 50c — pick one plot, bugs can never touch it again.',
+    body: '🐞 Ladybugs only land on THIRSTY plants — keep the water bar blue and they stay away. If one does land, a ⚠ BUG warning flashes 3 seconds early; tap the bug to flick it off. In SHOP you can buy 🧪 Bug Spray for 50c — pick one plot, the next harvest there is bug-proof.',
     cta: 'GOT IT',
   },
   {

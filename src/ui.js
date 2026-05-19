@@ -9,8 +9,9 @@ import {
   SHIELD_COST, buyShieldPending, isShieldPending, cancelShieldPlacement,
   SPRINKLERS, SPRINKLER_INTERVAL_MS, buySprinkler, isSprinklerPending,
   cancelSprinklerPlacement, getPendingSprinklerType,
+  RECIPES, brewPotion, startPotionTargeting, cancelPotionTargeting, isPotionPending,
 } from './state.js';
-import { SPECIES, speciesById, MYTHIC_IDS } from './plants.js';
+import { SPECIES, speciesById, MYTHIC_IDS, RARITY_COLORS } from './plants.js';
 import { relayout, setPhotoModeVisual, setEditModeVisual, setDecorPreview } from './renderer.js';
 import { getPhotos, deletePhoto } from './gallery.js';
 
@@ -26,6 +27,8 @@ const editBanner   = document.getElementById('editBanner');
 const hangBanner   = document.getElementById('hangBanner');
 const shieldBanner = document.getElementById('shieldBanner');
 const sprinklerBanner = document.getElementById('sprinklerBanner');
+const potionBanner    = document.getElementById('potionBanner');
+const potionsBtn      = document.getElementById('potionsBtn');
 const editToolbar  = document.getElementById('editToolbar');
 const editDoneBtn  = document.getElementById('editDoneBtn');
 const backdrop     = document.getElementById('modalBackdrop');
@@ -121,6 +124,21 @@ export function onSprinklerPlaced() {
   refreshSprinklerBanner();
 }
 
+// ─── POTION TARGETING ──────────────────────────────────────────────────────
+export function refreshPotionBanner() {
+  if (potionBanner) potionBanner.classList.toggle('hidden', !isPotionPending());
+}
+export function cancelPotionTarget() {
+  if (cancelPotionTargeting()) {
+    refreshPotionBanner();
+  }
+}
+export function onPotionApplied(name) {
+  showToast(`${name} applied`);
+  refreshPotionBanner();
+  refreshCoins();
+}
+
 function refreshEditToolbar() {
   const buttons = editToolbar.querySelectorAll('button.tool');
   for (const b of buttons) {
@@ -156,6 +174,13 @@ export function initUI() {
     if (photoMode) setPhotoMode(false);
     setEditMode(!editMode);
   });
+  if (potionsBtn) {
+    potionsBtn.addEventListener('click', () => {
+      if (photoMode) setPhotoMode(false);
+      if (editMode) setEditMode(false);
+      openPotions();
+    });
+  }
   editDoneBtn.addEventListener('click', () => setEditMode(false));
   editToolbar.querySelectorAll('button.tool').forEach(b => {
     b.addEventListener('click', () => setEditTool(b.dataset.tool));
@@ -168,6 +193,7 @@ export function initUI() {
       if (isHangingPotPending()) cancelHangingPlacement();
       if (isShieldPending()) cancelShieldPlace();
       if (isSprinklerPending()) cancelSprinklerPlace();
+      if (isPotionPending()) cancelPotionTarget();
       if (photoMode) setPhotoMode(false);
       if (editMode) setEditMode(false);
       closeModal();
@@ -751,7 +777,7 @@ function buildShieldRow() {
       <div class="swatch" style="background:#1a3a1c; border-color:#8ce888; color:#cfffd0; display:flex; align-items:center; justify-content:center; font-size:14px;">🧪</div>
       <div>
         <div class="name">+1 Bug Spray</div>
-        <div class="meta">Permanently keeps bugs off the plot you choose. · ${sprayed} sprayed</div>
+        <div class="meta">One-shot: protects the next harvest on the plot you choose. · ${sprayed} active</div>
       </div>
     </div>
   `;
@@ -871,6 +897,210 @@ function buildHangingSeedRow(sp, hpId) {
   right.appendChild(price);
   right.appendChild(btn);
   row.appendChild(right);
+  return row;
+}
+
+// ─── POTION CRAFTING MODAL ─────────────────────────────────────────────────
+
+// Local pot state: { [speciesId]: count }. Reset each time the modal opens.
+let brewPot = {};
+
+export function openPotions() {
+  brewPot = {};
+  renderPotionsModal();
+}
+
+function renderPotionsModal() {
+  openModal((modal) => {
+    const h = document.createElement('h2');
+    h.textContent = 'POTIONS';
+    modal.appendChild(h);
+    const sub = document.createElement('p');
+    sub.className = 'sub';
+    sub.textContent = 'Drop ingredients into the pot, BREW, then choose a plant.';
+    modal.appendChild(sub);
+
+    // Brewed potions in storage
+    if (state.potions.length > 0) {
+      const t = document.createElement('div');
+      t.className = 'section-title';
+      t.textContent = 'BREWED POTIONS';
+      modal.appendChild(t);
+      for (const p of state.potions) {
+        modal.appendChild(buildPotionRow(p));
+      }
+    }
+
+    // Inventory
+    const t1 = document.createElement('div');
+    t1.className = 'section-title';
+    t1.textContent = 'INVENTORY (harvested plants)';
+    modal.appendChild(t1);
+    const invGrid = document.createElement('div');
+    invGrid.style.cssText = 'display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 6px; margin: 4px 0 10px;';
+    const entries = Object.entries(state.inventory).sort();
+    if (entries.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'opacity:0.65; font-size:12px; padding:6px;';
+      empty.textContent = 'No plants yet — harvest some to fill your inventory.';
+      modal.appendChild(empty);
+    } else {
+      for (const [sid, count] of entries) {
+        invGrid.appendChild(buildInventoryCell(sid, count));
+      }
+      modal.appendChild(invGrid);
+    }
+
+    // The pot
+    const t2 = document.createElement('div');
+    t2.className = 'section-title';
+    t2.textContent = 'BREWING POT';
+    modal.appendChild(t2);
+    modal.appendChild(buildBrewingPot());
+
+    // Recipes hint
+    const t3 = document.createElement('div');
+    t3.className = 'section-title';
+    t3.textContent = 'RECIPES';
+    modal.appendChild(t3);
+    for (const r of RECIPES) {
+      modal.appendChild(buildRecipeHint(r));
+    }
+  });
+}
+
+function buildInventoryCell(sid, count) {
+  const sp = speciesById(sid);
+  const color = sp ? (sp.bloom?.color || sp.stem.color) : '#666';
+  const rarityColor = sp ? (RARITY_COLORS[sp.rarity] || '#888') : '#888';
+  const cell = document.createElement('button');
+  cell.type = 'button';
+  cell.style.cssText = `display:flex; align-items:center; gap:6px;
+    background:#0f160f; border:1px solid ${rarityColor}; border-radius:4px;
+    padding:6px 8px; cursor:pointer; color:var(--ink);`;
+  cell.innerHTML = `
+    <span style="display:inline-block; width:14px; height:14px; border-radius:50%; background:${color}; border:1px solid #000;"></span>
+    <span style="flex:1; text-align:left; font-size:12px; letter-spacing:1px;">${sp ? sp.name : sid}</span>
+    <span style="font-size:12px; color:${rarityColor};">×${count}</span>
+  `;
+  cell.addEventListener('click', () => {
+    const have = state.inventory[sid] || 0;
+    const inPot = brewPot[sid] || 0;
+    if (inPot >= have) { showToast('No more of those left'); return; }
+    brewPot[sid] = inPot + 1;
+    renderPotionsModal();
+  });
+  return cell;
+}
+
+function buildBrewingPot() {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'border:1px solid #5a6878; border-radius:6px; padding:10px; background:#0e160f;';
+
+  // Ingredient list
+  const items = Object.entries(brewPot).filter(([, n]) => n > 0);
+  if (items.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'opacity:0.6; font-size:12px; padding:6px;';
+    empty.textContent = 'Empty pot — tap an inventory item to add it.';
+    wrap.appendChild(empty);
+  } else {
+    const list = document.createElement('div');
+    list.style.cssText = 'display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;';
+    for (const [sid, n] of items) {
+      const sp = speciesById(sid);
+      const rc = sp ? (RARITY_COLORS[sp.rarity] || '#888') : '#888';
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.style.cssText = `background:#1a261a; border:1px solid ${rc}; color:var(--ink);
+        padding:4px 8px; border-radius:3px; cursor:pointer; font-size:12px; letter-spacing:1px;`;
+      chip.textContent = `${sp ? sp.name : sid} ×${n} ✕`;
+      chip.title = 'Click to remove one';
+      chip.addEventListener('click', () => {
+        brewPot[sid] = Math.max(0, (brewPot[sid] || 0) - 1);
+        if (brewPot[sid] <= 0) delete brewPot[sid];
+        renderPotionsModal();
+      });
+      list.appendChild(chip);
+    }
+    wrap.appendChild(list);
+  }
+
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex; gap:8px; justify-content:flex-end; align-items:center; margin-top:4px;';
+
+  const clear = document.createElement('button');
+  clear.textContent = 'EMPTY POT';
+  clear.style.cssText = `background:transparent; color:var(--ink);
+    border:1px solid #4a5a4c; padding:6px 12px; font-size:11px; letter-spacing:2px; border-radius:3px;`;
+  clear.disabled = items.length === 0;
+  clear.addEventListener('click', () => { brewPot = {}; renderPotionsModal(); });
+  row.appendChild(clear);
+
+  const brew = document.createElement('button');
+  brew.textContent = 'BREW';
+  brew.style.cssText = `background:#2e3e34; color:var(--ink);
+    border:1px solid #8aa890; padding:6px 16px; font-size:12px; letter-spacing:3px; border-radius:3px;`;
+  brew.disabled = items.length === 0;
+  brew.addEventListener('click', () => {
+    const res = brewPotion(brewPot);
+    if (res.error) {
+      showToast(res.error);
+      return;
+    }
+    brewPot = {};
+    const recipe = RECIPES.find(r => r.id === res.recipeId);
+    showToast(`Brewed ${recipe ? recipe.name : 'potion'}`);
+    renderPotionsModal();
+  });
+  row.appendChild(brew);
+  wrap.appendChild(row);
+  return wrap;
+}
+
+function buildPotionRow(potion) {
+  const recipe = RECIPES.find(r => r.id === potion.recipeId);
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = `
+    <div class="left">
+      <div class="swatch" style="background:${recipe ? recipe.color : '#888'}; display:flex; align-items:center; justify-content:center; font-size:14px;">🧪</div>
+      <div>
+        <div class="name">${recipe ? recipe.name : 'Unknown potion'}</div>
+        <div class="meta">${recipe ? recipe.desc : ''}</div>
+      </div>
+    </div>
+  `;
+  const right = document.createElement('div');
+  right.style.display = 'flex';
+  right.style.alignItems = 'center';
+  const btn = document.createElement('button');
+  btn.textContent = 'USE';
+  btn.addEventListener('click', () => {
+    if (startPotionTargeting(potion.id)) {
+      refreshPotionBanner();
+      closeModal();
+    }
+  });
+  right.appendChild(btn);
+  row.appendChild(right);
+  return row;
+}
+
+function buildRecipeHint(r) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const parts = Object.entries(r.ingredients)
+    .map(([k, n]) => `${n}× ${k}`).join(' + ');
+  row.innerHTML = `
+    <div class="left">
+      <div class="swatch" style="background:${r.color};"></div>
+      <div>
+        <div class="name">${r.name}</div>
+        <div class="meta">${parts} · ${r.desc}</div>
+      </div>
+    </div>
+  `;
   return row;
 }
 

@@ -1,4 +1,4 @@
-import { state, STARTING_COINS, STARTING_GEMS, STARTING_PLOTS, MAX_PLOTS, UPGRADES, SKINS, DECOR_TYPES, SPRINKLERS, SPRINKLER_INTERVAL_MS } from './state.js';
+import { state, STARTING_COINS, STARTING_GEMS, STARTING_PLOTS, MAX_PLOTS, UPGRADES, SKINS, DECOR_TYPES, SPRINKLERS, SPRINKLER_INTERVAL_MS, RECIPES } from './state.js';
 import { SPECIES, speciesById, DEFAULT_UNLOCKED } from './plants.js';
 
 const KEY = 'plant_rush:v1';
@@ -22,9 +22,33 @@ export function loadState() {
     state.hangingPots = mergeHangingPots(data.hangingPots, state.decor);
     state.shieldedPlots = mergeShielded(data.shieldedPlots, state.plotCount);
     state.sprinklers = mergeSprinklers(data.sprinklers);
+    state.inventory = mergeInventory(data.inventory);
+    state.potions = mergePotions(data.potions);
+    state.gildedPlots = mergeShielded(data.gildedPlots, state.plotCount);
   } catch (e) {
     resetDefaults();
   }
+}
+
+function mergeInventory(a) {
+  const out = {};
+  if (!a || typeof a !== 'object') return out;
+  for (const [sid, n] of Object.entries(a)) {
+    if (typeof sid !== 'string' || !speciesById(sid)) continue;
+    if (!Number.isFinite(n) || n <= 0) continue;
+    out[sid] = Math.floor(n);
+  }
+  return out;
+}
+
+function mergePotions(a) {
+  if (!Array.isArray(a)) return [];
+  const allowed = new Set(RECIPES.map(r => r.id));
+  return a.filter(p => p && typeof p === 'object'
+      && typeof p.id === 'string'
+      && typeof p.recipeId === 'string'
+      && allowed.has(p.recipeId))
+    .map(p => ({ id: p.id, recipeId: p.recipeId }));
 }
 
 function mergeSprinklers(a) {
@@ -128,6 +152,9 @@ function resetDefaults() {
   state.hangingPots = [];
   state.shieldedPlots = [];
   state.sprinklers = [];
+  state.inventory = {};
+  state.potions = [];
+  state.gildedPlots = [];
 }
 
 function mergeHangingPots(a, decor) {
@@ -205,6 +232,9 @@ export function saveState() {
     hangingPots: state.hangingPots,
     shieldedPlots: state.shieldedPlots,
     sprinklers: state.sprinklers,
+    inventory: state.inventory,
+    potions: state.potions,
+    gildedPlots: state.gildedPlots,
   };
   localStorage.setItem(KEY, JSON.stringify(data));
 }

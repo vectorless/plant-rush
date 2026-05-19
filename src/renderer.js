@@ -1020,7 +1020,70 @@ function drawEffects(nowMs) {
     if (age >= e.duration) { effects.splice(i, 1); continue; }
     if (e.type === 'water') drawWaterEffect(e, age);
     else if (e.type === 'spray') drawSprayEffect(e, age);
+    else if (e.type === 'potion') drawPotionEffect(e, age);
   }
+}
+
+// Potion application: colored particles spiraling up + a flash ring.
+export function spawnPotionEffect(plotIdx, color) {
+  const N = 24;
+  const particles = [];
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2 + Math.random() * 0.4;
+    const speed = 50 + Math.random() * 90;
+    particles.push({
+      angle: a,
+      speed,
+      rise: 70 + Math.random() * 60,
+      life: 1100 + Math.random() * 400,
+      size: 2.5 + Math.random() * 2,
+    });
+  }
+  effects.push({
+    type: 'potion',
+    plotIdx,
+    color,
+    start: performance.now(),
+    duration: 1600,
+    particles,
+  });
+}
+
+function drawPotionEffect(e, age) {
+  const r = plotRects[e.plotIdx];
+  if (!r) return;
+  const t = age / 1000;
+  ctx.save();
+  // Flash ring
+  if (age < 350) {
+    const rt = age / 350;
+    const radius = 12 + rt * 70;
+    const alpha = 0.55 * (1 - rt);
+    ctx.strokeStyle = e.color;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(r.soilX, r.soilY - 20, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  // Spiraling particles
+  for (const p of e.particles) {
+    if (age > p.life) continue;
+    const lifeT = age / p.life;
+    const radius = p.speed * t * Math.exp(-1.2 * t);
+    const swirl = p.angle + t * 3.5;
+    const x = r.soilX + Math.cos(swirl) * radius * 0.6;
+    const y = r.soilY - 10 - p.rise * lifeT - Math.sin(swirl) * radius * 0.3;
+    const alpha = 0.95 * (1 - lifeT);
+    const size = p.size * (1 + lifeT * 0.4);
+    ctx.fillStyle = e.color;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(x, y, size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 function drawWaterEffect(e, age) {
