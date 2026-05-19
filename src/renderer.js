@@ -239,9 +239,10 @@ export function hitTestHanging(cssX, cssY) {
     // Visuals are 5× smaller than the underlying perspective scale; floors keep
     // the hit area clickable even when the pot renders tiny.
     const visualScale = pos.scale * HANGING_POT_VIS_SCALE;
+    const ropeLen = 36 * Math.max(0.6, pos.scale) * HANGING_POT_VIS_SCALE;
     const halfW = Math.max(12, 22 * visualScale + 6);
     const above = Math.max(28, 70 * visualScale + 14);
-    const below = Math.max(8,  18 * visualScale + 4);
+    const below = Math.max(8,  18 * visualScale + 4) + ropeLen;
     if (cssX >= pos.x - halfW && cssX <= pos.x + halfW
         && cssY >= pos.y - above && cssY <= pos.y + below) {
       return hp.id;
@@ -288,19 +289,19 @@ const HANGING_POT_VIS_SCALE = 0.2;
 function drawHangingPotItem(hp, pos, nowMs) {
   const s = Math.max(0.6, pos.scale) * HANGING_POT_VIS_SCALE;
   ctx.save();
-  // Rope from above the pot toward the decor anchor
+  // Pot (smaller terracotta). Hangs below the anchor (bottom of leaves) by ropeLen.
+  const topW = 32 * s, botW = 22 * s, h = 20 * s;
+  const ropeLen = 36 * s;
+  const py = pos.y + ropeLen; // top of pot rim
+  // Ropes from the canopy anchor down to the pot rim corners
   ctx.strokeStyle = '#3a2a1a';
   ctx.lineWidth = 1.5 * s;
   ctx.beginPath();
-  ctx.moveTo(pos.x - 8 * s, pos.y - 60 * s);
-  ctx.lineTo(pos.x - 4 * s, pos.y - 12 * s);
-  ctx.moveTo(pos.x + 8 * s, pos.y - 60 * s);
-  ctx.lineTo(pos.x + 4 * s, pos.y - 12 * s);
+  ctx.moveTo(pos.x, pos.y);
+  ctx.lineTo(pos.x - topW / 2, py);
+  ctx.moveTo(pos.x, pos.y);
+  ctx.lineTo(pos.x + topW / 2, py);
   ctx.stroke();
-
-  // Pot (smaller terracotta)
-  const topW = 32 * s, botW = 22 * s, h = 20 * s;
-  const py = pos.y; // top of pot rim
   ctx.fillStyle = '#b85a28';
   ctx.beginPath();
   ctx.moveTo(pos.x - topW / 2, py);
