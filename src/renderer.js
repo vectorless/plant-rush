@@ -236,15 +236,17 @@ export function hitTestHanging(cssX, cssY) {
     const hp = state.hangingPots[i];
     const pos = hangingPotPos(hp);
     if (!pos) continue;
-    // Visuals are 5× smaller than the underlying perspective scale; floors keep
-    // the hit area clickable even when the pot renders tiny.
-    const visualScale = pos.scale * HANGING_POT_VIS_SCALE;
-    const ropeLen = 36 * Math.max(0.6, pos.scale) * HANGING_POT_VIS_SCALE;
-    const halfW = Math.max(12, 22 * visualScale + 6);
-    const above = Math.max(28, 70 * visualScale + 14);
-    const below = Math.max(8,  18 * visualScale + 4) + ropeLen;
+    // Match drawHangingPotItem: s uses the same 0.6 floor so the hit area
+    // tracks the actual rendered pot rather than the raw perspective scale.
+    const s = Math.max(0.6, pos.scale) * HANGING_POT_VIS_SCALE;
+    const ropeLen = 36 * s;
+    const potH = 20 * s;
+    const py = pos.y + ropeLen; // top of pot rim, same as the draw fn
+    const halfW = Math.max(16, 22 * s + 8);
+    const above = Math.max(34, 80 * s + 14); // covers plant rising above pot
+    const below = Math.max(20, potH + 30 * s + 6); // covers pot + affordance/bar
     if (cssX >= pos.x - halfW && cssX <= pos.x + halfW
-        && cssY >= pos.y - above && cssY <= pos.y + below) {
+        && cssY >= py - above && cssY <= py + below) {
       return hp.id;
     }
   }
