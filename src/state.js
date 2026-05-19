@@ -112,27 +112,79 @@ export const UPGRADES = {
   },
 };
 
+// ─── GARDENS (multi-screen) ────────────────────────────────────────────────
+// Each garden is an independent screen with its own plots, decor, sprinklers,
+// etc. Coins, gems, inventory, potions, and upgrades are shared across all
+// gardens. Bugs are global to the active garden only (cleared on switch).
+export const DEFAULT_GARDENS = [
+  { id: 'home',     name: 'Home Garden' },
+  { id: 'meadow',   name: 'Meadow' },
+  { id: 'cliffside', name: 'Cliffside' },
+];
+
+export const PER_GARDEN_FIELDS = [
+  'plots', 'plotCount', 'decor', 'potPlots',
+  'hangingPots', 'shieldedPlots', 'gildedPlots', 'sprinklers',
+];
+
+export function makeGarden(id, name) {
+  return {
+    id, name,
+    plots: makeEmptyPlots(STARTING_PLOTS),
+    plotCount: STARTING_PLOTS,
+    decor: [],
+    potPlots: [],
+    hangingPots: [],
+    shieldedPlots: [],
+    gildedPlots: [],
+    sprinklers: [],
+  };
+}
+
 export const state = {
   coins: STARTING_COINS,
   gems: STARTING_GEMS,
   lastTick: Date.now(),
   lastDailyClaim: null, // 'YYYY-MM-DD' local date
-  plotCount: STARTING_PLOTS,
-  plots: makeEmptyPlots(STARTING_PLOTS),
   unlockedSpecies: [...DEFAULT_UNLOCKED],
   upgrades: { water: 0, growth: 0, harvest: 0 },
-  decor: [],            // [{id, type, xFrac, yFrac}]
-  potPlots: [],         // plot indices that show a pot
   unlockedSkins: [],    // ['pot']
-  hangingPots: [],      // [{id, decorId, plot: null | plotShape}]
-  shieldedPlots: [],    // plot indices protected from bugs
-  bugs: [],             // [{id, plotIdx, sideSign, angle, jitter}] — transient, not persisted
-  bugWarning: null,     // null | {plotIdx, spawnAt} — heads-up before bug appears
-  sprinklers: [],       // [{id, type, xFrac, nextWaterAt}]
-  inventory: {},        // { [speciesId]: count } — built up by harvesting
-  potions: [],          // [{id, recipeId}] — brewed, not-yet-used
-  gildedPlots: [],      // plot indices whose next harvest pays 2×
+  bugs: [],             // [{id, plotIdx, ...}] — transient, cleared on garden switch
+  bugWarning: null,     // null | {plotIdx, spawnAt}
+  inventory: {},        // { [speciesId]: count } — shared across gardens
+  potions: [],          // [{id, recipeId}] — shared across gardens
+  gardens: DEFAULT_GARDENS.map(g => makeGarden(g.id, g.name)),
+  activeGardenId: 'home',
 };
+
+export function activeGarden() {
+  return state.gardens.find(g => g.id === state.activeGardenId) || state.gardens[0];
+}
+
+// Forward per-garden field reads/writes to the active garden so existing call
+// sites (state.plots, state.plotCount, ...) continue to work unchanged.
+for (const field of PER_GARDEN_FIELDS) {
+  Object.defineProperty(state, field, {
+    get() { return activeGarden()[field]; },
+    set(v) { activeGarden()[field] = v; },
+    configurable: true,
+    enumerable: true,
+  });
+}
+
+export function switchGarden(id) {
+  const g = state.gardens.find(g => g.id === id);
+  if (!g) return false;
+  if (state.activeGardenId === id) return false;
+  state.activeGardenId = id;
+  // Bugs target plot indices in the just-left garden; wipe them.
+  state.bugs = [];
+  state.bugWarning = null;
+  return true;
+}
+
+export function getGardens() { return state.gardens; }
+export function getActiveGardenId() { return state.activeGardenId; }
 
 export function todayKey(d = new Date()) {
   const y = d.getFullYear();
@@ -437,8 +489,11 @@ export function advanceGrowth(now = Date.now()) {
   const dt = Math.min(now - state.lastTick, MAX_DT_MS);
   if (dt <= 0) { state.lastTick = now; return; }
   const speed = growthSpeedMult();
-  for (const plot of state.plots) advancePlot(plot, now, dt, speed);
-  for (const hp of state.hangingPots) advancePlot(hp.plot, now, dt, speed);
+  // Plants on inactive gardens grow too, so the player isn't punished for visiting one screen.
+  for (const g of state.gardens) {
+    for (const plot of g.plots) advancePlot(plot, now, dt, speed);
+    for (const hp of g.hangingPots) advancePlot(hp.plot, now, dt, speed);
+  }
   state.lastTick = now;
 }
 
@@ -474,8 +529,10 @@ export function applyOfflineCatchup(now = Date.now()) {
   if (elapsed <= 0) { state.lastTick = now; return; }
   const start = state.lastTick;
   const speed = growthSpeedMult();
-  for (const plot of state.plots) catchupPlot(plot, start, now, speed);
-  for (const hp of state.hangingPots) catchupPlot(hp.plot, start, now, speed);
+  for (const g of state.gardens) {
+    for (const plot of g.plots) catchupPlot(plot, start, now, speed);
+    for (const hp of g.hangingPots) catchupPlot(hp.plot, start, now, speed);
+  }
   state.lastTick = now;
 }
 

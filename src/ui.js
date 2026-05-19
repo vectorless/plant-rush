@@ -10,6 +10,7 @@ import {
   SPRINKLERS, SPRINKLER_INTERVAL_MS, buySprinkler, isSprinklerPending,
   cancelSprinklerPlacement, getPendingSprinklerType,
   RECIPES, brewPotion, startPotionTargeting, cancelPotionTargeting, isPotionPending,
+  getGardens, getActiveGardenId, switchGarden,
 } from './state.js';
 import { SPECIES, speciesById, MYTHIC_IDS, RARITY_COLORS } from './plants.js';
 import { relayout, setPhotoModeVisual, setEditModeVisual, setDecorPreview } from './renderer.js';
@@ -29,6 +30,7 @@ const shieldBanner = document.getElementById('shieldBanner');
 const sprinklerBanner = document.getElementById('sprinklerBanner');
 const potionBanner    = document.getElementById('potionBanner');
 const potionsBtn      = document.getElementById('potionsBtn');
+const gardenBtn       = document.getElementById('gardenBtn');
 const editToolbar  = document.getElementById('editToolbar');
 const editDoneBtn  = document.getElementById('editDoneBtn');
 const backdrop     = document.getElementById('modalBackdrop');
@@ -180,6 +182,14 @@ export function initUI() {
       if (editMode) setEditMode(false);
       openPotions();
     });
+  }
+  if (gardenBtn) {
+    gardenBtn.addEventListener('click', () => {
+      if (photoMode) setPhotoMode(false);
+      if (editMode) setEditMode(false);
+      openGardenPicker();
+    });
+    refreshGardenBtn();
   }
   editDoneBtn.addEventListener('click', () => setEditMode(false));
   editToolbar.querySelectorAll('button.tool').forEach(b => {
@@ -895,6 +905,67 @@ function buildHangingSeedRow(sp, hpId) {
     }
   });
   right.appendChild(price);
+  right.appendChild(btn);
+  row.appendChild(right);
+  return row;
+}
+
+// ─── GARDEN SWITCHER ───────────────────────────────────────────────────────
+
+export function refreshGardenBtn() {
+  if (!gardenBtn) return;
+  const g = getGardens().find(g => g.id === getActiveGardenId());
+  gardenBtn.textContent = `🌍 ${g ? g.name.toUpperCase() : 'GARDEN'}`;
+}
+
+export function openGardenPicker() {
+  openModal((modal) => {
+    const h = document.createElement('h2');
+    h.textContent = 'PICK A GARDEN';
+    modal.appendChild(h);
+    const sub = document.createElement('p');
+    sub.className = 'sub';
+    sub.textContent = 'Each garden is its own screen with its own plots, decor, and sprinklers. Coins, gems, inventory and potions are shared.';
+    modal.appendChild(sub);
+
+    for (const g of getGardens()) {
+      modal.appendChild(buildGardenRow(g));
+    }
+  });
+}
+
+function buildGardenRow(g) {
+  const planted = g.plots.filter(p => p && p.species).length;
+  const active = g.id === getActiveGardenId();
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = `
+    <div class="left">
+      <div class="swatch" style="background:#3a6a3a; display:flex; align-items:center; justify-content:center; font-size:14px;">🌍</div>
+      <div>
+        <div class="name">${g.name}${active ? ' · here now' : ''}</div>
+        <div class="meta">${g.plotCount} plots · ${planted} planted · ${g.decor.length} decor · ${g.sprinklers.length} sprinkler</div>
+      </div>
+    </div>
+  `;
+  const right = document.createElement('div');
+  right.style.display = 'flex';
+  right.style.alignItems = 'center';
+  const btn = document.createElement('button');
+  btn.textContent = active ? 'CURRENT' : 'VISIT';
+  btn.disabled = active;
+  btn.addEventListener('click', () => {
+    if (switchGarden(g.id)) {
+      relayout();
+      refreshGardenBtn();
+      refreshCoins();
+      refreshHangBanner();
+      refreshShieldBanner();
+      refreshSprinklerBanner();
+      showToast(`Welcome to ${g.name}`);
+      closeModal();
+    }
+  });
   right.appendChild(btn);
   row.appendChild(right);
   return row;

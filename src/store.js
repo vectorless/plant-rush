@@ -1,4 +1,4 @@
-import { state, STARTING_COINS, STARTING_GEMS, STARTING_PLOTS, MAX_PLOTS, UPGRADES, SKINS, DECOR_TYPES, SPRINKLERS, SPRINKLER_INTERVAL_MS, RECIPES } from './state.js';
+import { state, STARTING_COINS, STARTING_GEMS, STARTING_PLOTS, MAX_PLOTS, UPGRADES, SKINS, DECOR_TYPES, SPRINKLERS, SPRINKLER_INTERVAL_MS, RECIPES, DEFAULT_GARDENS, makeGarden } from './state.js';
 import { SPECIES, speciesById, DEFAULT_UNLOCKED } from './plants.js';
 
 const KEY = 'plant_rush:v1';
@@ -12,22 +12,69 @@ export function loadState() {
     state.gems  = Number.isFinite(data.gems)  ? data.gems  : STARTING_GEMS;
     state.lastTick = Number.isFinite(data.lastTick) ? data.lastTick : Date.now();
     state.lastDailyClaim = typeof data.lastDailyClaim === 'string' ? data.lastDailyClaim : null;
-    state.plotCount = clampInt(data.plotCount, STARTING_PLOTS, MAX_PLOTS, STARTING_PLOTS);
-    state.plots = mergePlots(data.plots, state.plotCount);
     state.unlockedSpecies = mergeUnlocked(data.unlockedSpecies);
     state.upgrades = mergeUpgrades(data.upgrades);
     state.unlockedSkins = mergeSkins(data.unlockedSkins);
-    state.potPlots = mergePotPlots(data.potPlots, state.plotCount);
-    state.decor = mergeDecor(data.decor);
-    state.hangingPots = mergeHangingPots(data.hangingPots, state.decor);
-    state.shieldedPlots = mergeShielded(data.shieldedPlots, state.plotCount);
-    state.sprinklers = mergeSprinklers(data.sprinklers);
     state.inventory = mergeInventory(data.inventory);
     state.potions = mergePotions(data.potions);
-    state.gildedPlots = mergeShielded(data.gildedPlots, state.plotCount);
+    // Gardens: new saves use data.gardens, old saves keep flat fields.
+    state.gardens = mergeGardens(data);
+    state.activeGardenId = typeof data.activeGardenId === 'string'
+      && state.gardens.some(g => g.id === data.activeGardenId)
+        ? data.activeGardenId
+        : state.gardens[0].id;
   } catch (e) {
     resetDefaults();
   }
+}
+
+function mergeGardens(data) {
+  // New-style: data.gardens is an array of full garden records.
+  if (Array.isArray(data.gardens) && data.gardens.length > 0) {
+    const seen = new Set();
+    const out = [];
+    for (const g of data.gardens) {
+      if (!g || typeof g !== 'object') continue;
+      if (typeof g.id !== 'string' || seen.has(g.id)) continue;
+      seen.add(g.id);
+      const plotCount = clampInt(g.plotCount, STARTING_PLOTS, MAX_PLOTS, STARTING_PLOTS);
+      const decor = mergeDecor(g.decor);
+      out.push({
+        id: g.id,
+        name: typeof g.name === 'string' ? g.name : g.id,
+        plotCount,
+        plots: mergePlots(g.plots, plotCount),
+        decor,
+        potPlots: mergePotPlots(g.potPlots, plotCount),
+        hangingPots: mergeHangingPots(g.hangingPots, decor),
+        shieldedPlots: mergeShielded(g.shieldedPlots, plotCount),
+        gildedPlots: mergeShielded(g.gildedPlots, plotCount),
+        sprinklers: mergeSprinklers(g.sprinklers),
+      });
+    }
+    // Ensure each default garden id exists (so menu options remain stable).
+    for (const def of DEFAULT_GARDENS) {
+      if (!seen.has(def.id)) out.push(makeGarden(def.id, def.name));
+    }
+    return out;
+  }
+  // Old-style: migrate the flat top-level fields into the 'home' garden,
+  // then add empty defaults for the other gardens.
+  const plotCount = clampInt(data.plotCount, STARTING_PLOTS, MAX_PLOTS, STARTING_PLOTS);
+  const decor = mergeDecor(data.decor);
+  const home = {
+    id: 'home', name: 'Home Garden',
+    plotCount,
+    plots: mergePlots(data.plots, plotCount),
+    decor,
+    potPlots: mergePotPlots(data.potPlots, plotCount),
+    hangingPots: mergeHangingPots(data.hangingPots, decor),
+    shieldedPlots: mergeShielded(data.shieldedPlots, plotCount),
+    gildedPlots: mergeShielded(data.gildedPlots, plotCount),
+    sprinklers: mergeSprinklers(data.sprinklers),
+  };
+  const rest = DEFAULT_GARDENS.filter(g => g.id !== 'home').map(g => makeGarden(g.id, g.name));
+  return [home, ...rest];
 }
 
 function mergeInventory(a) {
@@ -142,19 +189,13 @@ function resetDefaults() {
   state.gems  = STARTING_GEMS;
   state.lastTick = Date.now();
   state.lastDailyClaim = null;
-  state.plotCount = STARTING_PLOTS;
-  state.plots = Array.from({ length: STARTING_PLOTS }, () => null);
   state.unlockedSpecies = [...DEFAULT_UNLOCKED];
   state.upgrades = { water: 0, growth: 0, harvest: 0 };
   state.unlockedSkins = [];
-  state.potPlots = [];
-  state.decor = [];
-  state.hangingPots = [];
-  state.shieldedPlots = [];
-  state.sprinklers = [];
   state.inventory = {};
   state.potions = [];
-  state.gildedPlots = [];
+  state.gardens = DEFAULT_GARDENS.map(g => makeGarden(g.id, g.name));
+  state.activeGardenId = state.gardens[0].id;
 }
 
 function mergeHangingPots(a, decor) {
@@ -222,19 +263,23 @@ export function saveState() {
     gems: state.gems,
     lastTick: state.lastTick,
     lastDailyClaim: state.lastDailyClaim,
-    plotCount: state.plotCount,
-    plots: state.plots,
     unlockedSpecies: state.unlockedSpecies,
     upgrades: state.upgrades,
     unlockedSkins: state.unlockedSkins,
-    potPlots: state.potPlots,
-    decor: state.decor,
-    hangingPots: state.hangingPots,
-    shieldedPlots: state.shieldedPlots,
-    sprinklers: state.sprinklers,
     inventory: state.inventory,
     potions: state.potions,
-    gildedPlots: state.gildedPlots,
+    activeGardenId: state.activeGardenId,
+    gardens: state.gardens.map(g => ({
+      id: g.id, name: g.name,
+      plotCount: g.plotCount,
+      plots: g.plots,
+      decor: g.decor,
+      potPlots: g.potPlots,
+      hangingPots: g.hangingPots,
+      shieldedPlots: g.shieldedPlots,
+      gildedPlots: g.gildedPlots,
+      sprinklers: g.sprinklers,
+    })),
   };
   localStorage.setItem(KEY, JSON.stringify(data));
 }
