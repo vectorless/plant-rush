@@ -463,20 +463,22 @@ function randomBugDelay() {
   return BUG_SPAWN_BASE_MS / Math.sqrt(plots) + Math.random() * BUG_SPAWN_VAR_MS;
 }
 
-function isPlotEligibleForBug(i) {
+function isPlotEligibleForBug(i, now = Date.now()) {
   if (i < 0 || i >= state.plotCount) return false;
   if (isPlotShielded(i)) return false;
   if (state.bugs.some(b => b.plotIdx === i)) return false; // one bug per plot
   const p = state.plots[i];
   if (!p || !p.species) return false;
   if (p.growthProgress <= 0) return false;
+  // Bugs only swarm thirsty plants — keep the can full to keep them away.
+  if (now < p.wateredUntil) return false;
   return true;
 }
 
-function pickBugTarget() {
+function pickBugTarget(now = Date.now()) {
   const out = [];
   for (let i = 0; i < state.plotCount; i++) {
-    if (isPlotEligibleForBug(i)) out.push(i);
+    if (isPlotEligibleForBug(i, now)) out.push(i);
   }
   if (out.length === 0) return null;
   return out[Math.floor(Math.random() * out.length)];
@@ -497,12 +499,12 @@ export function tickBugs(now = Date.now(), dt = TICK_MS) {
   // Schedule a target + arrival time as soon as a slot is free, so the warning
   // indicator has time to show 3 s before the bug actually appears.
   if (!state.bugWarning) {
-    const target = pickBugTarget();
+    const target = pickBugTarget(now);
     if (target !== null) {
       state.bugWarning = { plotIdx: target, spawnAt: now + randomBugDelay() };
     }
-  } else if (!isPlotEligibleForBug(state.bugWarning.plotIdx)) {
-    // Target became invalid (shielded, harvested, etc.) — drop the warning.
+  } else if (!isPlotEligibleForBug(state.bugWarning.plotIdx, now)) {
+    // Target became invalid (shielded, harvested, watered, etc.) — drop the warning.
     state.bugWarning = null;
   } else if (now >= state.bugWarning.spawnAt) {
     spawnBugOnPlot(state.bugWarning.plotIdx, now);
