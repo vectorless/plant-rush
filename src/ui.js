@@ -2,6 +2,7 @@ import {
   state, plantSeed, buyPlot, buyUpgrade, unlockSpecies, nextPlotCost,
   MAX_PLOTS, UPGRADES, DAILY_GEMS, SKINS,
   waterDurationMs, growthSpeedMult, harvestValueMult,
+  levelFromXp, spendLevelUp, LEVEL_BONUS_PCT,
   dailyEligible, claimDaily, buySkin,
   hangingPotCost, buyHangingPot, isHangingPotPending, cancelHangingPotPlacement,
   plantInHanging, tradeGemForCoins, GEM_TO_COINS,
@@ -16,9 +17,13 @@ import {
 import { SPECIES, speciesById, MYTHIC_IDS, RARITY_COLORS } from './plants.js';
 import { relayout, setPhotoModeVisual, setEditModeVisual, setDecorPreview } from './renderer.js';
 import { getPhotos, deletePhoto } from './gallery.js';
+import { leaderboardEntries, setPlayerName } from './leaderboard.js';
 
 const coinValueEl  = document.getElementById('coinValue');
 const gemValueEl   = document.getElementById('gemValue');
+const xpLevelEl    = document.getElementById('xpLevel');
+const xpFracEl     = document.getElementById('xpFrac');
+const xpBarFillEl  = document.getElementById('xpBarFill');
 const shopBtn      = document.getElementById('shopBtn');
 const photoBtn     = document.getElementById('photoBtn');
 const galleryBtn   = document.getElementById('galleryBtn');
@@ -32,6 +37,7 @@ const sprinklerBanner = document.getElementById('sprinklerBanner');
 const potionBanner    = document.getElementById('potionBanner');
 const potionsBtn      = document.getElementById('potionsBtn');
 const gardenBtn       = document.getElementById('gardenBtn');
+const leaderboardBtn  = document.getElementById('leaderboardBtn');
 const editToolbar  = document.getElementById('editToolbar');
 const editDoneBtn  = document.getElementById('editDoneBtn');
 const backdrop     = document.getElementById('modalBackdrop');
@@ -192,6 +198,13 @@ export function initUI() {
     });
     refreshGardenBtn();
   }
+  if (leaderboardBtn) {
+    leaderboardBtn.addEventListener('click', () => {
+      if (photoMode) setPhotoMode(false);
+      if (editMode) setEditMode(false);
+      openLeaderboard();
+    });
+  }
   editDoneBtn.addEventListener('click', () => setEditMode(false));
   editToolbar.querySelectorAll('button.tool').forEach(b => {
     b.addEventListener('click', () => setEditTool(b.dataset.tool));
@@ -222,6 +235,7 @@ export function initUI() {
   });
   refreshCoins();
   refreshGems();
+  refreshXp();
   refreshDailyBtn();
 }
 
@@ -231,6 +245,86 @@ export function refreshCoins() {
 
 export function refreshGems() {
   gemValueEl.textContent = Math.floor(state.gems);
+}
+
+export function refreshXp() {
+  const xp = Math.max(0, Math.floor(state.xp || 0));
+  const { level, cumAtLevel, xpForNext } = levelFromXp(xp);
+  const into = xp - cumAtLevel;
+  if (xpLevelEl) xpLevelEl.textContent = level;
+  if (xpFracEl)  xpFracEl.textContent = `${into} / ${xpForNext}`;
+  if (xpBarFillEl) {
+    const pct = xpForNext > 0 ? Math.min(100, (into / xpForNext) * 100) : 100;
+    xpBarFillEl.style.width = `${pct}%`;
+  }
+}
+
+// ─── LEVEL-UP CHOICE ──────────────────────────────────────────────────────
+export function maybeShowLevelUpModal() {
+  if ((state.pendingLevelUps || 0) <= 0) return;
+  openLevelUpModal();
+}
+
+function openLevelUpModal() {
+  openModal((modal) => {
+    const level = state.level || 1;
+    const pending = state.pendingLevelUps || 0;
+    const pctTxt = `+${Math.round(LEVEL_BONUS_PCT * 100)}%`;
+    const growthCur = (state.growthBonusLevels || 0);
+    const incomeCur = (state.incomeBonusLevels || 0);
+
+    const h = document.createElement('h2');
+    h.textContent = `LEVEL ${level}`;
+    h.style.color = '#8ce888';
+    modal.appendChild(h);
+    const sub = document.createElement('p');
+    sub.className = 'sub';
+    sub.textContent = pending > 1
+      ? `🎉 You leveled up! Pick a bonus (${pending} picks remaining)`
+      : '🎉 You leveled up! Pick a bonus.';
+    modal.appendChild(sub);
+
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 6px;';
+
+    const mkCard = (key, title, icon, descLines, accent) => {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.style.cssText = `display:flex; flex-direction:column; align-items:stretch;
+        background:#0f160f; border:1px solid ${accent}; color:var(--ink);
+        padding:18px 16px; border-radius:8px; cursor:pointer; gap:8px;
+        transition: background 0.12s, transform 0.08s;`;
+      card.addEventListener('mouseenter', () => { card.style.background = '#172218'; });
+      card.addEventListener('mouseleave', () => { card.style.background = '#0f160f'; });
+      card.innerHTML = `
+        <div style="font-size:42px; line-height:1; text-align:center;">${icon}</div>
+        <div style="font-size:14px; letter-spacing:3px; text-align:center; color:${accent};">${title}</div>
+        <div style="font-size:12px; opacity:0.85; text-align:center;">${descLines.join('<br>')}</div>
+      `;
+      card.addEventListener('click', () => {
+        if (spendLevelUp(key)) {
+          refreshXp();
+          closeModal();
+          // chain if more picks queued
+          if ((state.pendingLevelUps || 0) > 0) setTimeout(openLevelUpModal, 200);
+        }
+      });
+      return card;
+    };
+
+    grid.appendChild(mkCard(
+      'growth', 'GROWTH SPEED', '🌿',
+      [`${pctTxt} faster growth`, `Now: ×${(1 + LEVEL_BONUS_PCT * growthCur).toFixed(2)} → ×${(1 + LEVEL_BONUS_PCT * (growthCur + 1)).toFixed(2)}`],
+      '#8ce888',
+    ));
+    grid.appendChild(mkCard(
+      'income', 'HARVEST INCOME', '💰',
+      [`${pctTxt} more coins per harvest`, `Now: ×${(1 + LEVEL_BONUS_PCT * incomeCur).toFixed(2)} → ×${(1 + LEVEL_BONUS_PCT * (incomeCur + 1)).toFixed(2)}`],
+      '#ffe78a',
+    ));
+
+    modal.appendChild(grid);
+  });
 }
 
 export function refreshDailyBtn() {
@@ -278,9 +372,13 @@ export function openRedeem() {
         msg.textContent = `✓ ${res.message}`;
         refreshCoins();
         refreshGems();
+        refreshXp();
         showToast(res.message);
         input.value = '';
-        setTimeout(closeModal, 600);
+        setTimeout(() => {
+          closeModal();
+          if ((state.pendingLevelUps || 0) > 0) maybeShowLevelUpModal();
+        }, 600);
       } else {
         msg.style.color = '#e88a8a';
         msg.textContent = `✗ ${res.reason}`;
@@ -995,6 +1093,87 @@ function buildGardenRow(g) {
     right.appendChild(btn);
   }
   row.appendChild(right);
+  return row;
+}
+
+// ─── LEADERBOARD MODAL ─────────────────────────────────────────────────────
+
+export function openLeaderboard() {
+  openModal((modal) => {
+    const h = document.createElement('h2');
+    h.textContent = 'LEADERBOARD';
+    modal.appendChild(h);
+
+    const sub = document.createElement('p');
+    sub.className = 'sub';
+    sub.textContent = 'Top gardeners ranked by level.';
+    modal.appendChild(sub);
+
+    const nameRow = document.createElement('div');
+    nameRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin: 4px 0 12px; font-size:12px; color: var(--ink-dim); letter-spacing:1px;';
+    const nameLabel = document.createElement('span');
+    nameLabel.textContent = 'YOU:';
+    const nameVal = document.createElement('span');
+    nameVal.style.cssText = 'color: var(--ink); letter-spacing:2px;';
+    nameVal.textContent = state.playerName || 'You';
+    const renameBtn = document.createElement('button');
+    renameBtn.textContent = '✏️ rename';
+    renameBtn.style.cssText = 'background: transparent; color: var(--ink-dim); border: 1px solid #4a5a4c; padding: 2px 8px; font-size: 11px; letter-spacing: 1px; cursor: pointer;';
+    renameBtn.addEventListener('click', () => {
+      const next = window.prompt('Display name (max 20 chars):', state.playerName || 'You');
+      if (next == null) return;
+      if (setPlayerName(next)) {
+        closeModal();
+        openLeaderboard();
+      }
+    });
+    nameRow.appendChild(nameLabel);
+    nameRow.appendChild(nameVal);
+    nameRow.appendChild(renameBtn);
+    modal.appendChild(nameRow);
+
+    const list = document.createElement('div');
+    list.style.cssText = 'max-height: 420px; overflow-y: auto; border: 1px solid #2a3a2e; padding: 4px;';
+    const entries = leaderboardEntries();
+    for (const e of entries) {
+      list.appendChild(buildLeaderRow(e));
+    }
+    modal.appendChild(list);
+
+    // Scroll YOU into view on open.
+    setTimeout(() => {
+      const youEl = list.querySelector('.lb-you');
+      if (youEl) youEl.scrollIntoView({ block: 'center' });
+    }, 0);
+  });
+}
+
+function buildLeaderRow(e) {
+  const row = document.createElement('div');
+  const medal = e.rank === 1 ? '🥇' : e.rank === 2 ? '🥈' : e.rank === 3 ? '🥉' : '';
+  const youTint = e.you ? 'background: #1f3024; border-left: 3px solid #8ce888;' : '';
+  const goldTint = e.rank === 1 ? 'background: rgba(255,210,90,0.08);'
+                  : e.rank === 2 ? 'background: rgba(200,200,210,0.06);'
+                  : e.rank === 3 ? 'background: rgba(200,140,80,0.06);'
+                  : '';
+  row.className = e.you ? 'lb-row lb-you' : 'lb-row';
+  row.style.cssText = `display:flex; align-items:center; gap:10px; padding: 6px 10px; ${e.you ? youTint : goldTint}`;
+  const rank = document.createElement('span');
+  rank.style.cssText = 'width: 38px; color: var(--ink-dim); font-size: 13px; letter-spacing: 1px;';
+  rank.textContent = `#${e.rank}`;
+  const name = document.createElement('span');
+  name.style.cssText = `flex: 1; font-size: 14px; letter-spacing: 1px; color: ${e.you ? '#d4f8c4' : 'var(--ink)'};`;
+  name.textContent = medal ? `${medal} ${e.name}` : e.name;
+  const lv = document.createElement('span');
+  lv.style.cssText = 'color: #8ce888; font-size: 13px; letter-spacing: 1px; width: 60px; text-align: right;';
+  lv.textContent = `LV ${e.level}`;
+  const xp = document.createElement('span');
+  xp.style.cssText = 'color: var(--ink-dim); font-size: 12px; letter-spacing: 1px; width: 90px; text-align: right;';
+  xp.textContent = `${e.xp.toLocaleString()} XP`;
+  row.appendChild(rank);
+  row.appendChild(name);
+  row.appendChild(lv);
+  row.appendChild(xp);
   return row;
 }
 

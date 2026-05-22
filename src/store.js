@@ -1,4 +1,4 @@
-import { state, STARTING_COINS, STARTING_GEMS, STARTING_PLOTS, MAX_PLOTS, UPGRADES, SKINS, DECOR_TYPES, SPRINKLERS, SPRINKLER_INTERVAL_MS, RECIPES, DEFAULT_GARDENS, makeGarden } from './state.js';
+import { state, STARTING_COINS, STARTING_GEMS, STARTING_PLOTS, MAX_PLOTS, UPGRADES, SKINS, DECOR_TYPES, SPRINKLERS, SPRINKLER_INTERVAL_MS, RECIPES, DEFAULT_GARDENS, makeGarden, levelFromXp } from './state.js';
 import { SPECIES, speciesById, DEFAULT_UNLOCKED } from './plants.js';
 
 const KEY = 'plant_rush:v1';
@@ -10,6 +10,19 @@ export function loadState() {
     const data = JSON.parse(raw);
     state.coins = Number.isFinite(data.coins) ? data.coins : STARTING_COINS;
     state.gems  = Number.isFinite(data.gems)  ? data.gems  : STARTING_GEMS;
+    state.xp    = Number.isFinite(data.xp)    ? Math.max(0, data.xp) : 0;
+    state.growthBonusLevels = Number.isFinite(data.growthBonusLevels) ? Math.max(0, Math.floor(data.growthBonusLevels)) : 0;
+    state.incomeBonusLevels = Number.isFinite(data.incomeBonusLevels) ? Math.max(0, Math.floor(data.incomeBonusLevels)) : 0;
+    // Derive level from XP, then reconcile any saved pending picks. If the
+    // computed level is higher than (saved level + saved pending), enqueue the
+    // gap — protects against losing a level-up if save shape ever drifts.
+    const { level: derived } = levelFromXp(state.xp);
+    const savedLevel = Number.isFinite(data.level) ? Math.max(1, Math.floor(data.level)) : 1;
+    const savedPending = Number.isFinite(data.pendingLevelUps) ? Math.max(0, Math.floor(data.pendingLevelUps)) : 0;
+    state.level = Math.max(derived, savedLevel);
+    const spent = state.growthBonusLevels + state.incomeBonusLevels;
+    const owed = Math.max(0, state.level - 1 - spent);
+    state.pendingLevelUps = Math.max(savedPending, owed);
     state.lastTick = Number.isFinite(data.lastTick) ? data.lastTick : Date.now();
     state.lastDailyClaim = typeof data.lastDailyClaim === 'string' ? data.lastDailyClaim : null;
     state.unlockedSpecies = mergeUnlocked(data.unlockedSpecies);
@@ -24,6 +37,12 @@ export function loadState() {
       && state.unlockedGardens.includes(data.activeGardenId)
         ? data.activeGardenId
         : 'home';
+    state.redeemedCodes = Array.isArray(data.redeemedCodes)
+      ? data.redeemedCodes.filter(c => typeof c === 'string')
+      : [];
+    state.playerName = typeof data.playerName === 'string' && data.playerName.trim()
+      ? data.playerName.trim().slice(0, 20)
+      : 'You';
   } catch (e) {
     resetDefaults();
   }
@@ -211,6 +230,11 @@ function mergePlots(p, n) {
 function resetDefaults() {
   state.coins = STARTING_COINS;
   state.gems  = STARTING_GEMS;
+  state.xp    = 0;
+  state.level = 1;
+  state.growthBonusLevels = 0;
+  state.incomeBonusLevels = 0;
+  state.pendingLevelUps = 0;
   state.lastTick = Date.now();
   state.lastDailyClaim = null;
   state.unlockedSpecies = [...DEFAULT_UNLOCKED];
@@ -221,6 +245,8 @@ function resetDefaults() {
   state.gardens = DEFAULT_GARDENS.map(g => makeGarden(g.id, g.name));
   state.activeGardenId = state.gardens[0].id;
   state.unlockedGardens = ['home'];
+  state.redeemedCodes = [];
+  state.playerName = 'You';
 }
 
 function mergeHangingPots(a, decor) {
@@ -286,6 +312,11 @@ export function saveState() {
   const data = {
     coins: state.coins,
     gems: state.gems,
+    xp: state.xp,
+    level: state.level,
+    growthBonusLevels: state.growthBonusLevels,
+    incomeBonusLevels: state.incomeBonusLevels,
+    pendingLevelUps: state.pendingLevelUps,
     lastTick: state.lastTick,
     lastDailyClaim: state.lastDailyClaim,
     unlockedSpecies: state.unlockedSpecies,
@@ -295,6 +326,8 @@ export function saveState() {
     potions: state.potions,
     activeGardenId: state.activeGardenId,
     unlockedGardens: state.unlockedGardens,
+    redeemedCodes: state.redeemedCodes,
+    playerName: state.playerName,
     gardens: state.gardens.map(g => ({
       id: g.id, name: g.name,
       plotCount: g.plotCount,

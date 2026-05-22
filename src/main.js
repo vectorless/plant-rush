@@ -3,7 +3,7 @@ import { loadState, saveState } from './store.js';
 import { loadGallery } from './gallery.js';
 import { initRenderer, render, spawnWaterEffect } from './renderer.js';
 import { initInput } from './input.js';
-import { initUI, refreshCoins, openDaily, refreshDailyBtn } from './ui.js';
+import { initUI, refreshCoins, openDaily, refreshDailyBtn, maybeShowLevelUpModal } from './ui.js';
 import { dailyEligible } from './state.js';
 import { initTutorial, tutorialTick } from './tutorial.js';
 
@@ -24,6 +24,11 @@ initTutorial();
 if (dailyEligible()) {
   // Slight delay so the canvas renders first.
   setTimeout(openDaily, 350);
+}
+
+// If a previous session ended mid-level-up, finish picking now.
+if ((state.pendingLevelUps || 0) > 0) {
+  setTimeout(maybeShowLevelUpModal, dailyEligible() ? 900 : 400);
 }
 
 // State tick: deterministic 100ms steps. Updates growth and refreshes coin HUD

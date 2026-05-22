@@ -6,7 +6,8 @@ import { state, plotState, applyWater, harvest,
   isSprinklerPending, placeSprinkler, removeSprinkler,
   isPotionPending, getPendingPotionRecipe, applyPendingPotionToPlot } from './state.js';
 import { hitTest, hitTestDecor, hitTestHanging, hitTestBug, hitTestSprinkler, spawnWaterEffect, spawnSprayEffect, spawnPotionEffect, snapshotPlant, cssToFrac, setDecorPreview } from './renderer.js';
-import { openSeedPicker, openHangingSeedPicker, showToast, refreshCoins,
+import { openSeedPicker, openHangingSeedPicker, showToast, refreshCoins, refreshXp,
+  maybeShowLevelUpModal,
   isPhotoMode, setPhotoMode,
   isEditMode, getEditTool, getEditMoveSrc, setEditMoveSrc,
   onHangingAttached, refreshHangBanner, onShieldAttached, onSprinklerPlaced,
@@ -130,10 +131,12 @@ function handleHangingClick(hpId) {
   } else if (st === 'growing') {
     waterHanging(hpId);
   } else if (st === 'mature') {
-    const gained = harvestHanging(hpId);
-    if (gained > 0) {
-      showToast(`+${gained}`);
+    const { coins, xp, levelUps } = harvestHanging(hpId);
+    if (coins > 0) {
+      showToast(xp > 0 ? `+${coins}c · +${xp} XP` : `+${coins}c`);
       refreshCoins();
+      refreshXp();
+      if (levelUps > 0) maybeShowLevelUpModal();
     }
   }
 }
@@ -171,10 +174,12 @@ function handlePlotClick(idx) {
       spawnWaterEffect(idx);
     }
   } else if (st === 'mature') {
-    const gained = harvest(idx);
-    if (gained > 0) {
-      showToast(`+${gained}`);
+    const { coins, xp, levelUps } = harvest(idx);
+    if (coins > 0) {
+      showToast(xp > 0 ? `+${coins}c · +${xp} XP` : `+${coins}c`);
       refreshCoins();
+      refreshXp();
+      if (levelUps > 0) maybeShowLevelUpModal();
     }
   }
 }

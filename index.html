@@ -33,6 +33,13 @@
     #coins .lbl { font-size: 12px; opacity: 0.55; margin-right: 6px; letter-spacing: 3px; }
     #gems { font-size: 22px; letter-spacing: 2px; color: #c0a8ff; }
     #gems .lbl { font-size: 12px; opacity: 0.55; margin-right: 6px; letter-spacing: 3px; }
+    #xp { font-size: 22px; letter-spacing: 2px; color: #8ce888; display: flex; align-items: center; gap: 8px; }
+    #xp .lbl { font-size: 12px; opacity: 0.55; margin-right: 2px; letter-spacing: 3px; }
+    #xpBar { width: 80px; height: 8px; background: #1a2a1c; border: 1px solid #3a5a3c;
+      border-radius: 4px; overflow: hidden; }
+    #xpBarFill { height: 100%; background: linear-gradient(90deg, #6cb05c, #8ce888);
+      width: 0%; transition: width 0.25s ease; }
+    #xpFrac { font-size: 11px; opacity: 0.7; letter-spacing: 1px; }
     #dailyBtn { position: relative; }
     #dailyBtn.ready { border-color: #c0a8ff; color: #c0a8ff; }
     #dailyBtn.ready::after { content: ''; position: absolute; top: 4px; right: 4px;
@@ -209,6 +216,11 @@
     <div id="currencies">
       <div id="coins"><span class="lbl">COINS</span><span id="coinValue">0</span></div>
       <div id="gems"><span class="lbl">GEMS</span>💎 <span id="gemValue">0</span></div>
+      <div id="xp">
+        <span class="lbl">LV</span><span id="xpLevel">1</span>
+        <div id="xpBar"><div id="xpBarFill"></div></div>
+        <span id="xpFrac">0 / 50</span>
+      </div>
     </div>
     <div id="navBtns">
       <button id="dailyBtn">🎁 DAILY</button>
@@ -217,6 +229,7 @@
       <button id="gardenBtn">🌍 GARDEN</button>
       <button id="editBtn">🛠 EDIT</button>
       <button id="potionsBtn">🧪 POTIONS</button>
+      <button id="leaderboardBtn">🏆 LEADERS</button>
       <button id="shopBtn">SHOP</button>
     </div>
   </div>

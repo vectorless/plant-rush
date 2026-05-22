@@ -2,6 +2,47 @@ import { SPECIES, speciesById, DEFAULT_UNLOCKED } from './plants.js';
 
 export const STARTING_COINS    = 50;
 export const STARTING_GEMS     = 0;
+export const STARTING_XP       = 0;
+
+// XP awarded per harvest, by species rarity.
+export const XP_BY_RARITY = {
+  common:    10,
+  uncommon:  20,
+  rare:      30,
+  legendary: 35,
+  mythic:    100,
+};
+export function xpForSpecies(sp) {
+  if (!sp) return 0;
+  return XP_BY_RARITY[sp.rarity] || 0;
+}
+
+// XP required to advance from level N → N+1. After the listed base
+// thresholds the cost keeps doubling.
+//   1→2: 50, 2→3: 100, 3→4: 200, 4→5: 400, 5→6: 800, 6→7: 1000,
+//   7→8: 2000, 8→9: 4000, 9→10: 8000, …
+const XP_LEVEL_BASE = [50, 100, 200, 400, 800, 1000];
+export function xpToReachLevel(level) {
+  // XP required to go from (level-1) up to (level).
+  if (level <= 1) return 0;
+  const i = level - 2;
+  if (i < XP_LEVEL_BASE.length) return XP_LEVEL_BASE[i];
+  const last = XP_LEVEL_BASE[XP_LEVEL_BASE.length - 1]; // 1000
+  return last * Math.pow(2, i - (XP_LEVEL_BASE.length - 1));
+}
+export function levelFromXp(xp) {
+  let level = 1;
+  let cum = 0;
+  while (level < 200) {
+    const need = xpToReachLevel(level + 1);
+    if (xp < cum + need) return { level, cumAtLevel: cum, xpForNext: need };
+    cum += need;
+    level += 1;
+  }
+  return { level, cumAtLevel: cum, xpForNext: xpToReachLevel(level + 1) };
+}
+// Each level-up grants ONE pick worth +10% (growth speed or harvest income).
+export const LEVEL_BONUS_PCT = 0.10;
 export const COIN_FLOOR        = 5;
 export const DAILY_GEMS        = 10;
 export const GEM_TO_COINS      = 10; // 1 💎 = 10c
@@ -144,6 +185,11 @@ export function makeGarden(id, name) {
 export const state = {
   coins: STARTING_COINS,
   gems: STARTING_GEMS,
+  xp: STARTING_XP,
+  level: 1,
+  growthBonusLevels: 0, // count of level-ups spent on growth speed (+10% each)
+  incomeBonusLevels: 0, // count of level-ups spent on harvest income (+10% each)
+  pendingLevelUps: 0,   // unconsumed level-up choices waiting for player pick
   lastTick: Date.now(),
   lastDailyClaim: null, // 'YYYY-MM-DD' local date
   unlockedSpecies: [...DEFAULT_UNLOCKED],
@@ -156,6 +202,8 @@ export const state = {
   gardens: DEFAULT_GARDENS.map(g => makeGarden(g.id, g.name)),
   activeGardenId: 'home',
   unlockedGardens: ['home'],
+  redeemedCodes: [],    // codes flagged once-only that have already been used
+  playerName: 'You',    // display name on the (fake) leaderboard
 };
 
 export function activeGarden() {
@@ -221,6 +269,18 @@ export const REDEEM_CODES = {
     rejectReason: 'Only works when you have under 150 coins.',
     apply: () => { state.coins += 50; },
   },
+  'gem me pls': {
+    rewardText: '+10 gems',
+    once: true,
+    check: () => true,
+    apply: () => { state.gems += 10; },
+  },
+  'xp me pls': {
+    rewardText: '+250 XP',
+    once: true,
+    check: () => true,
+    apply: () => { gainXp(250); },
+  },
 };
 
 export function redeemCode(input) {
@@ -228,8 +288,15 @@ export function redeemCode(input) {
   if (!key) return { ok: false, reason: 'Enter a code' };
   const code = REDEEM_CODES[key];
   if (!code) return { ok: false, reason: 'Invalid code' };
+  if (code.once && (state.redeemedCodes || []).includes(key)) {
+    return { ok: false, reason: 'Already redeemed.' };
+  }
   if (!code.check()) return { ok: false, reason: code.rejectReason };
   code.apply();
+  if (code.once) {
+    if (!Array.isArray(state.redeemedCodes)) state.redeemedCodes = [];
+    state.redeemedCodes.push(key);
+  }
   return { ok: true, message: code.rewardText };
 }
 
@@ -261,10 +328,38 @@ export function waterDurationMs() {
   return UPGRADES.water.tiers[state.upgrades.water].durationMs;
 }
 export function growthSpeedMult() {
-  return UPGRADES.growth.tiers[state.upgrades.growth].speedMult;
+  return UPGRADES.growth.tiers[state.upgrades.growth].speedMult
+    * (1 + LEVEL_BONUS_PCT * (state.growthBonusLevels || 0));
 }
 export function harvestValueMult() {
-  return UPGRADES.harvest.tiers[state.upgrades.harvest].valueMult;
+  return UPGRADES.harvest.tiers[state.upgrades.harvest].valueMult
+    * (1 + LEVEL_BONUS_PCT * (state.incomeBonusLevels || 0));
+}
+
+// Award XP and bump the level counter, queueing any unspent level-ups.
+// Returns the number of level-ups that just triggered (0 if none).
+export function gainXp(amount) {
+  if (!amount || amount <= 0) return 0;
+  state.xp = (state.xp || 0) + amount;
+  const prev = state.level || 1;
+  const { level: next } = levelFromXp(state.xp);
+  if (next > prev) {
+    const ups = next - prev;
+    state.level = next;
+    state.pendingLevelUps = (state.pendingLevelUps || 0) + ups;
+    return ups;
+  }
+  return 0;
+}
+
+// Player picks growth or income on each level-up. Returns true if applied.
+export function spendLevelUp(choice) {
+  if ((state.pendingLevelUps || 0) <= 0) return false;
+  if (choice === 'growth') state.growthBonusLevels = (state.growthBonusLevels || 0) + 1;
+  else if (choice === 'income') state.incomeBonusLevels = (state.incomeBonusLevels || 0) + 1;
+  else return false;
+  state.pendingLevelUps -= 1;
+  return true;
 }
 
 // Anti-soft-lock: ensure player can always afford the cheapest seed.
@@ -300,7 +395,7 @@ export function applyWater(plotIdx, now = Date.now()) {
 
 export function harvest(plotIdx) {
   const plot = state.plots[plotIdx];
-  if (!plot || !plot.species || plot.growthProgress < 1) return 0;
+  if (!plot || !plot.species || plot.growthProgress < 1) return { coins: 0, xp: 0 };
   const sp = speciesById(plot.species);
   let value = Math.round(sp.harvestValue * harvestValueMult());
   const gildedIdx = state.gildedPlots.indexOf(plotIdx);
@@ -309,12 +404,14 @@ export function harvest(plotIdx) {
     state.gildedPlots.splice(gildedIdx, 1);
   }
   state.coins += value;
+  const xp = xpForSpecies(sp);
+  const levelUps = gainXp(xp);
   state.inventory[sp.id] = (state.inventory[sp.id] || 0) + 1;
   state.plots[plotIdx] = null;
   // Bug spray protects ONE plant — it's consumed when the plant is harvested.
   const shieldIdx = state.shieldedPlots.indexOf(plotIdx);
   if (shieldIdx >= 0) state.shieldedPlots.splice(shieldIdx, 1);
-  return value;
+  return { coins: value, xp, levelUps };
 }
 
 // Mythic seed unlock — paid in GEMS, not coins.
@@ -433,13 +530,15 @@ export function waterHanging(id, now = Date.now()) {
 
 export function harvestHanging(id) {
   const hp = findHanging(id);
-  if (!hp || !hp.plot || hp.plot.growthProgress < 1) return 0;
+  if (!hp || !hp.plot || hp.plot.growthProgress < 1) return { coins: 0, xp: 0 };
   const sp = speciesById(hp.plot.species);
   const value = Math.round(sp.harvestValue * harvestValueMult());
   state.coins += value;
+  const xp = xpForSpecies(sp);
+  const levelUps = gainXp(xp);
   state.inventory[sp.id] = (state.inventory[sp.id] || 0) + 1;
   hp.plot = null;
-  return value;
+  return { coins: value, xp, levelUps };
 }
 
 // ─── EDIT-MODE MUTATORS ────────────────────────────────────────────────────
@@ -643,11 +742,13 @@ export function tickBugs(now = Date.now(), dt = TICK_MS) {
     state.bugWarning = null;
   }
 
-  // Each bug chews growth. Mature plants get knocked back below 1 so they can't be harvested.
+  // Each bug chews growth — but only on dehydrated plants. Watering buys a reprieve
+  // (the bug stays put, just doesn't munch) so you can still tap to flick it off.
   const lossPerTick = BUG_EAT_PER_SEC * (dt / 1000);
   for (const bug of state.bugs) {
     const plot = state.plots[bug.plotIdx];
     if (!plot || !plot.species) continue;
+    if (now < plot.wateredUntil) continue;
     plot.growthProgress = Math.max(0, plot.growthProgress - lossPerTick);
   }
   // Bugs whose plot was emptied (harvested, etc.) disappear.
